@@ -1,0 +1,27 @@
+{
+  "name": "slug.zone",
+  "version": "1.0.0",
+  "description": "slug matter",
+  "main": "slug.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "browserify -t [ babelify --presets [ @babel/preset-react ] ] lib/slug.js -o dist/js/slug-bundle.js",
+    "build-dev": "browserify -t [ babelify --presets [ @babel/preset-react ] ] lib/slug.js --debug | exorcist dist/js/slug-bundle.js.map > dist/js/slug-bundle.js"
+  },
+  "keywords": [
+    "slug",
+    "zone"
+  ],
+  "author": "jacksonwearn@gmail.com",
+  "license": "ISC",
+  "dependencies": {
+    "@babel/core": "^7.6.0",
+    "@babel/preset-react": "^7.0.0",
+    "babel": "^6.23.0",
+    "babelify": "^10.0.0",
+    "browserify": "^16.5.0",
+    "exorcist": "^1.0.1",
+    "react": "^16.9.0",
+    "react-dom": "^16.9.0"
+  }
+}
