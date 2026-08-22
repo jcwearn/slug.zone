@@ -70,14 +70,17 @@ const level: LevelSource = {
     { type: 'pickup', item: 'health', x: 14.5, z: 4.5 },
     { type: 'pickup', item: 'redkey', x: 3.5, z: 13.5 },
 
-    // Every one of these sits in a cell reachable with the doors still shut.
-    // Doors do not open until the next phase, and an item stranded behind one
-    // is an item nobody can prove exists.
     { type: 'pickup', item: 'armourshard', x: 3.5, z: 5.5 },
     { type: 'pickup', item: 'coarse', x: 7.5, z: 7.5 },
     { type: 'pickup', item: 'coarsebox', x: 16.5, z: 9.5 },
     { type: 'pickup', item: 'armour', x: 11.5, z: 15.5 },
     { type: 'pickup', item: 'medkit', x: 18.5, z: 12.5 },
+
+    // The vault behind the red door at 13,13. Fourteen cells, and the exit is
+    // reachable without ever opening it -- so this has to be worth the detour
+    // on its own rather than because the level forces you through it.
+    { type: 'pickup', item: 'coarsebox', x: 15.5, z: 11.5 },
+    { type: 'pickup', item: 'medkit', x: 15.5, z: 12.5 },
   ],
   par: 90_000,
 }

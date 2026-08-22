@@ -14,6 +14,11 @@ import type { Expression } from './ui/face.ts'
 import { collect, createPickups, pickupsTouching, resetPickups } from './pickups/pickups.ts'
 import { buildPickupView, posePickup } from './pickups/render.ts'
 import { LIME } from './data/palette.ts'
+import { buildDoors, resetDoors, tickDoors, tryOpen, useTarget } from './world/doors.ts'
+import { DoorViews } from './world/doorview.ts'
+import { atExit, createSession, finishLevel, tickRun } from './session.ts'
+import { createTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
+import { browserStorage, loadRecords, recordTime, saveRecords } from './save/scores.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
   enemyCylinder,
@@ -54,6 +59,11 @@ import {
   playSwitch,
   playPickup,
   playKeyPickup,
+  playDoor,
+  playLocked,
+  playSecret,
+  playExit,
+  playTallyTick,
   unlockAudio,
 } from './audio/sfx.ts'
 import e1m1 from './world/levels/e1m1.ts'
@@ -63,6 +73,8 @@ if (!canvas) throw new Error('#viewport canvas missing')
 
 /** The site lime, as the message line's CSS colour. Derived, never retyped. */
 const LIME_TEXT = `#${LIME.toString(16).padStart(6, '0')}`
+/** A refusal reads in the same red the status bar warns in. */
+const LOCKED_TEXT = '#c8341a'
 
 const level = parseLevel(e1m1)
 const view = new RetroRenderer(canvas)
@@ -80,6 +92,12 @@ view.scene.add(lantern)
 
 const meshes = buildLevelMeshes(level)
 view.scene.add(meshes.group)
+
+// The leaves are separate meshes because a face merged into the level's static
+// batches cannot move. geometry.ts emits the floor and ceiling they uncover.
+const doors = buildDoors(level)
+const doorViews = new DoorViews(doors, level)
+view.scene.add(doorViews.group)
 
 const tracers = new Tracers()
 view.scene.add(tracers.mesh)
@@ -119,6 +137,10 @@ const health = createHealth()
 const arsenal = createArsenal()
 const screen = new ScreenLayer()
 const keys = new Set<string>()
+
+const session = createSession(level, live.length, pickups.length)
+const store = browserStorage()
+let tally: Tally | null = null
 
 /**
  * Which portrait frame to show.
@@ -188,11 +210,41 @@ function restart(): void {
   }
 
   resetPickups(pickups)
+  // `cell.open` outlives a restart because the Level object is reused -- that
+  // is the whole reason this is not a page reload. Without resetDoors the
+  // second run starts with every door already standing open.
+  resetDoors(doors, level)
+  doorViews.sync(doors, level)
+
   globs.clear()
   keys.clear()
   notice = { text: '', colour: '' }
   noticeTimer = 0
+
+  Object.assign(session, createSession(level, live.length, pickups.length))
+  tally = null
+  screen.hideTally()
   deathScreen?.classList.add('hidden')
+}
+
+/** The card a locked door wants, phrased for the message line. */
+function lockedMessage(key: string): string {
+  return `YOU NEED THE ${key.toUpperCase()} KEYCARD`
+}
+
+/**
+ * Reaching the exit: stop the clock, save the time, and build the tally.
+ *
+ * The record is read and written here rather than on the intermission screen,
+ * so the number shown is the one that was actually stored.
+ */
+function completeLevel(): void {
+  finishLevel(session)
+  const records = loadRecords(store)
+  const result = recordTime(records, level.id, session.elapsed)
+  if (result.improved) saveRecords(store, records)
+  tally = createTally(session, result.previous ?? result.best, result.improved)
+  playExit()
 }
 
 let lastPhase = arsenal.phase
@@ -308,6 +360,7 @@ new Loop({
     }
 
     if (health.dead) {
+      session.phase = 'dead'
       deathScreen?.classList.remove('hidden')
       // Fire restarts. The button is already down from whatever killed you, so
       // it has to be released first or the click that killed you also skips
@@ -320,6 +373,31 @@ new Loop({
       screen.update(health, arsenal, keys)
       return
     }
+
+    if (tally) {
+      const step = stepTally(tally, dt)
+      if (step.ticked) playTallyTick()
+
+      // The same two-stage press the death screen uses, for the same reason:
+      // the fire button is still down from the last thing you shot. The first
+      // press skips the count-up, the second replays -- with a beat in between
+      // so a held button cannot do both.
+      if (input.isDown('fire')) {
+        input.releaseFire()
+        if (!tally.done) snapTally(tally)
+        else if (tally.hold > 0.4) restart()
+      }
+
+      screen.showTally(level.name, tally)
+      screen.update(health, arsenal, keys, 'neutral', { text: '', colour: '' })
+      // Doors keep moving so a leaf caught mid-rise is not frozen behind the
+      // tally, and the enemies are deliberately left where they stood.
+      tickDoors(doors, level, dt)
+      doorViews.sync(doors, level)
+      return
+    }
+
+    tickRun(session, dt)
 
     const before = { x: player.x, z: player.z }
     // Live slugs only -- corpses are scenery you walk over.
@@ -338,9 +416,40 @@ new Loop({
       const result = collect(item.def, { health, arsenal, keys })
       if (!result.taken) continue
       item.taken = true
+      session.items++
       say(result.message, LIME_TEXT)
       if (item.def.effect.kind === 'key') playKeyPickup()
       else playPickup()
+    }
+
+    // Use, before the exit check: a door opened on the tick you step onto the
+    // exit should still open.
+    if (input.consumeUse()) {
+      const target = useTarget(level, player.x, player.z, player.yaw)
+      const result = target
+        ? tryOpen(doors, target.x, target.z, keys)
+        : { outcome: 'none' as const }
+
+      if (result.outcome === 'opened') {
+        playDoor()
+        if (result.door?.secret) {
+          session.secrets++
+          say('A SECRET IS REVEALED', LIME_TEXT)
+          playSecret()
+        }
+      } else if (result.outcome === 'locked' && result.door?.key) {
+        // Counted at the moment of use rather than when the leaf finishes, so
+        // the credit lands when the discovery does.
+        say(lockedMessage(result.door.key), LOCKED_TEXT)
+        playLocked()
+      }
+    }
+
+    tickDoors(doors, level, dt)
+
+    if (atExit(level, player.x, player.z)) {
+      completeLevel()
+      return
     }
 
     for (const slot of input.consumeSlots()) selectSlot(arsenal, slot)
@@ -368,6 +477,8 @@ new Loop({
       const nowIdle = entry.enemy.mind.state === 'idle'
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
+      // `justDied` is already a one-tick flag, so no edge tracking needed.
+      if (entry.enemy.mind.justDied) session.kills++
 
       // The strike lands at the end of the wind-up, and only if the player is
       // still in range -- the FSM already decided that.
@@ -442,6 +553,7 @@ new Loop({
     for (let i = 0; i < pickups.length; i++) {
       posePickup(pickupViews[i], pickups[i], s, level.wallHeight, itemClock)
     }
+    doorViews.sync(doors, level)
 
     tickHealth(health, dt)
     snarlTimer = Math.max(0, snarlTimer - dt)

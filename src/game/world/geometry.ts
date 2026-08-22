@@ -1,18 +1,22 @@
 import * as THREE from 'three'
-import { cellAt, isSolid, type Level } from './level.ts'
+import { cellAt, type Level } from './level.ts'
 import { texture } from '../engine/textures.ts'
 
 /**
  * Build the level's meshes.
  *
- * Wall faces are emitted only where a solid cell meets an open one. Drawing
- * all six faces of every solid cube would render the entire interior of every
- * wall block -- invisible geometry, but still transformed, rasterised and
- * depth-tested every frame. On E1M1 that is roughly a 5x saving.
+ * Wall faces are emitted only where a wall meets something you can see
+ * through. Drawing all six faces of every solid cube would render the entire
+ * interior of every wall block -- invisible geometry, but still transformed,
+ * rasterised and depth-tested every frame. On E1M1 that is roughly a 5x saving.
  *
  * One merged BufferGeometry per texture rather than a mesh per cell: 300-odd
  * meshes is 300 draw calls, and this is a game that has to hold 60fps while
  * also running enemies.
+ *
+ * This builds the STATIC world only. Door and secret leaves move, so they are
+ * separate meshes in `doorview.ts`; what is emitted here for those cells is
+ * the floor and ceiling the leaf uncovers.
  */
 
 export interface FaceBatch {
@@ -45,6 +49,23 @@ export interface LevelMeshes {
 }
 
 /**
+ * Whether a neighbouring cell hides the face between them.
+ *
+ * Deliberately NOT `isSolid`. A door is solid to collision but is a PORTAL to
+ * geometry: its leaf is a separate mesh that rises out of the way, so the
+ * walls around it need real faces or opening it reveals the hollow inside of
+ * the jamb and a view straight through the wall. Same for a secret.
+ *
+ * Using `isSolid` here would also tie the static mesh to runtime door state,
+ * so a level rebuilt with a door already open would bake the hole in.
+ */
+function opaque(level: Level, x: number, z: number): boolean {
+  const cell = cellAt(level, x, z)
+  if (!cell) return true
+  return Boolean(cell.wall ?? cell.void)
+}
+
+/**
  * Vertex data only -- no meshes, no materials, no textures.
  *
  * Split out so the geometry can be asserted in a plain node test. Textures are
@@ -69,19 +90,22 @@ export function buildLevelBuffers(level: Level): Map<string, FaceBatch> {
     for (let x = 0; x < level.width; x++) {
       const cell = cellAt(level, x, z)
       if (!cell) continue
+      if (cell.void) continue
 
-      const solid = isSolid(level, x, z)
-      if (solid) {
-        if (cell.void) continue
-        const key = cell.door ? 'door' : (cell.wall ?? cell.secretWall ?? 'brick')
-        const b = batchFor(key)
+      // Doors and secrets take the open-cell branch: they need a floor under
+      // them and a ceiling over them, or the moment the leaf rises you are
+      // looking into the void through the gap where the cell used to be. The
+      // leaf itself is built by `doorview.ts` as its own mesh, because a face
+      // merged into one of these batches cannot move.
+      if (cell.wall) {
+        const b = batchFor(cell.wall)
         const x0 = x * s
         const x1 = (x + 1) * s
         const z0 = z * s
         const z1 = (z + 1) * s
 
-        // A face is only drawn where this solid cell borders an open one.
-        if (!isSolid(level, x, z - 1)) {
+        // A face is only drawn where this wall borders something see-through.
+        if (!opaque(level, x, z - 1)) {
           quad(
             b,
             [
@@ -95,7 +119,7 @@ export function buildLevelBuffers(level: Level): Map<string, FaceBatch> {
             1,
           )
         }
-        if (!isSolid(level, x, z + 1)) {
+        if (!opaque(level, x, z + 1)) {
           quad(
             b,
             [
@@ -109,7 +133,7 @@ export function buildLevelBuffers(level: Level): Map<string, FaceBatch> {
             1,
           )
         }
-        if (!isSolid(level, x - 1, z)) {
+        if (!opaque(level, x - 1, z)) {
           quad(
             b,
             [
@@ -123,7 +147,7 @@ export function buildLevelBuffers(level: Level): Map<string, FaceBatch> {
             1,
           )
         }
-        if (!isSolid(level, x + 1, z)) {
+        if (!opaque(level, x + 1, z)) {
           quad(
             b,
             [
@@ -138,7 +162,8 @@ export function buildLevelBuffers(level: Level): Map<string, FaceBatch> {
           )
         }
       } else {
-        // Floor and ceiling for every open cell.
+        // Floor and ceiling for every cell you could ever stand in --
+        // floor, exit, and the door and secret cells whose leaves lift away.
         const floor = batchFor(cell.exit ? 'slime' : level.floorTex)
         quad(
           floor,

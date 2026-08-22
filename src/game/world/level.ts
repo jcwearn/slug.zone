@@ -3,6 +3,17 @@ import type { CellSpec, EntitySpec, LevelSource } from './types.ts'
 export interface Cell extends CellSpec {
   x: number
   z: number
+  /**
+   * Runtime state, never authored. Set by `world/doors.ts` once a door or
+   * secret has risen far enough to walk through.
+   *
+   * It lives on the Cell and NOT on `cell.door`, which would be the obvious
+   * place. `parseLevel` copies the legend spec shallowly, so every `D` cell
+   * shares ONE `door` object -- the same one the level module exports, and the
+   * same one every other parse of that level gets. A flag written there opens
+   * every door in the level at once and leaks into the next test in the file.
+   */
+  open?: boolean
 }
 
 export interface Level {
@@ -60,7 +71,11 @@ export function parseLevel(src: LevelSource): Level {
         )
       }
       if (spec.secretWall) secretCount++
-      cells.push({ ...spec, x, z })
+      // `door` is copied rather than shared. A shallow spread would hand every
+      // door cell in the level the same object, so anything that ever writes
+      // to one writes to all of them -- and to the legend the level module
+      // exports, which outlives the parse.
+      cells.push({ ...spec, door: spec.door ? { ...spec.door } : undefined, x, z })
     }
   }
 
@@ -109,31 +124,46 @@ export function cellAt(level: Level, x: number, z: number): Cell | undefined {
 }
 
 /**
- * Blocks movement. Doors count as solid until opened -- door state lives with
- * the door system, not the geometry, so this is the closed-world answer.
- * Anything off-grid is solid, which is what stops a body leaving the map.
+ * Blocks movement. Anything off-grid is solid, which is what stops a body
+ * leaving the map.
+ *
+ * Doors and secret walls are solid until `world/doors.ts` marks the cell open.
+ * Putting the runtime flag here rather than threading a door-state object
+ * through every collision call is deliberate: `moveWithCollision`, the DDA
+ * raycast, line of sight, the enemy mover and the glob step all already funnel
+ * through this one function, so they get door state for free and cannot
+ * disagree about it. Ten extra signatures could each be passed the wrong
+ * thing; there is nothing here to pass wrongly.
  */
 export function isSolid(level: Level, x: number, z: number): boolean {
   const cell = cellAt(level, x, z)
   if (!cell) return true
+  if (cell.open) return false
   return Boolean(cell.wall ?? cell.secretWall ?? cell.door ?? cell.void)
 }
 
-/** Traversable when working out whether the level can actually be completed. */
-function isWalkableForReachability(level: Level, x: number, z: number): boolean {
+/**
+ * Traversable when working out whether the level can actually be completed.
+ *
+ * A door is passable only if the player could be holding its key by the time
+ * they arrive. `secretWall` is deliberately never passable: a secret must not
+ * be load-bearing, because a level that only completes by finding one is a
+ * level most players cannot complete at all.
+ */
+function isWalkableForReachability(
+  level: Level,
+  x: number,
+  z: number,
+  keys: ReadonlySet<string>,
+): boolean {
   const cell = cellAt(level, x, z)
   if (!cell) return false
-  return Boolean(cell.floor ?? cell.exit ?? cell.door)
+  if (cell.floor ?? cell.exit) return true
+  if (cell.door) return cell.door.key === null || keys.has(cell.door.key)
+  return false
 }
 
-/**
- * Flood fill from the player start over floor, doors and the exit.
- *
- * This is the check that a map is actually finishable. Walling the exit off is
- * a one-character mistake in a hand-edited grid and completely invisible until
- * someone plays to the end and finds nothing there.
- */
-export function reachableFromStart(level: Level): Set<number> {
+function flood(level: Level, keys: ReadonlySet<string>): Set<number> {
   const seen = new Set<number>()
   const start = Math.floor(level.playerStart.z) * level.width + Math.floor(level.playerStart.x)
   const queue = [start]
@@ -153,13 +183,65 @@ export function reachableFromStart(level: Level): Set<number> {
       const nz = z + dz
       const ni = nz * level.width + nx
       if (seen.has(ni)) continue
-      if (!isWalkableForReachability(level, nx, nz)) continue
+      if (!isWalkableForReachability(level, nx, nz, keys)) continue
       seen.add(ni)
       queue.push(ni)
     }
   }
 
   return seen
+}
+
+/**
+ * Flood fill from the player start, over floor, the exit, and every door whose
+ * key the player could actually have got hold of by the time they reach it.
+ *
+ * This is the check that a map is finishable. Walling the exit off is a
+ * one-character mistake in a hand-edited grid and completely invisible until
+ * someone plays to the end and finds nothing there.
+ *
+ * A fixed point rather than a single pass, because collecting one key opens
+ * doors that expose the next. Without the loop, "reachable" quietly assumes
+ * the player already holds every card in the game -- so a red key sealed
+ * inside the red vault it opens passes every check here and ships as a level
+ * that cannot be finished.
+ *
+ * It terminates because `keys` only ever grows and there are three of them.
+ */
+export function reachableFromStart(level: Level): Set<number> {
+  const keys = new Set<string>()
+
+  for (;;) {
+    const seen = flood(level, keys)
+    let grew = false
+
+    for (const entity of level.entities) {
+      if (entity.type !== 'pickup') continue
+      const colour = keyColourOf(entity.item)
+      if (!colour || keys.has(colour)) continue
+      if (!seen.has(Math.floor(entity.z) * level.width + Math.floor(entity.x))) continue
+      keys.add(colour)
+      grew = true
+    }
+
+    if (!grew) return seen
+  }
+}
+
+/**
+ * Which keycard an item is, if it is one.
+ *
+ * Kept here, on the item id, rather than reaching for the pickup catalogue:
+ * reachability is a property of the level file and should not need the
+ * gameplay registry to answer a question about the grid. The naming convention
+ * is the contract, and `level.test.ts` holds every shipped item to it.
+ */
+function keyColourOf(item: string | undefined): string | null {
+  if (!item) return null
+  for (const colour of ['red', 'blue', 'yellow']) {
+    if (item === `${colour}key`) return colour
+  }
+  return null
 }
 
 /** Cells the player can never get to. An empty result is the healthy case. */
