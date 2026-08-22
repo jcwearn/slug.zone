@@ -13,9 +13,5 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     environment: 'node',
     globals: false,
-    // Nothing in this repo has testable logic yet -- the landing page is
-    // static markup. Real tests land with the collision, level-parsing and
-    // save modules; this keeps CI honest rather than green-by-stub until then.
-    passWithNoTests: true,
   },
 })
