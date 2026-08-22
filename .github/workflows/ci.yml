@@ -1,0 +1,29 @@
+name: CI
+
+# Calls the shared Node CI workflow in jcwearn/workflows, same as the other
+# Pages repos. Its contract is satisfied here: .node-version is pinned exact,
+# package-lock.json is committed, and package.json declares format:check, lint,
+# typecheck, test and build.
+#
+# No local `concurrency:` block -- the shared workflow declares its own, and two
+# groups for one logical run means the outer holds a slot while the inner
+# queues behind it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    # Explicit even though `read` is all node-ci needs. A reusable workflow can
+    # only narrow what the caller granted, so the grant belongs here where it
+    # is visible.
+    permissions:
+      contents: read
+    # Pinned to the digest anupamaandjackson uses rather than the `v1` tag.
+    # That tag currently resolves to 6dee2c5 (2026-08-15), which predates
+    # cloudflare-pages-deploy.yaml existing at all -- so deploy.yml cannot use
+    # it, and CI tracking a different commit than deploy would be worse.
+    uses: jcwearn/workflows/.github/workflows/node-ci.yaml@c9e49bd4c2226fa829a0179277df707b4585ce9e # v1

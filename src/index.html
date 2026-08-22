@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="author" content="Jackson Wearn" />
+    <meta name="description" content="Welcome to the Slug Zone.  You can never leave" />
+    <meta name="keywords" content="Slug,zone,Slug Zone" />
+    <title>Slug Zone</title>
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="./style.css" />
+
+    <!--
+      Press Start 2P is the whole visual identity of this page. Preconnect
+      because it is render-blocking and on the critical path; the CSS declares
+      `cursive` after it so a blocked Google Fonts still leaves something
+      legible rather than a system sans-serif.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+
+  <body id="page-top">
+    <!--
+      Static markup, deliberately. This is the DOM React rendered at runtime
+      from a 1.1 MB unminified dev bundle, for a page with six words on it.
+      #root is kept as the outer element because every CSS rule hangs off it.
+    -->
+    <div id="root">
+      <div class="aligner">
+        <div>
+          <a class="text coming-soon" href="/game/">It's finally here</a>
+          <div><img src="/slug.png" alt="Slug" /></div>
+          <a class="text play" href="/game/">PLAY</a>
+        </div>
+
+        <div class="text signature">slug.zone</div>
+      </div>
+    </div>
+  </body>
+</html>

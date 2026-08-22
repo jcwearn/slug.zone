@@ -1,0 +1,20 @@
+/*
+ * The canvas is upscaled from a 320x200 render target by whole numbers only,
+ * so `image-rendering: pixelated` is what keeps the blit crisp -- the browser
+ * would otherwise smooth it back into the blur this whole approach exists to
+ * avoid. Sizing happens in renderer.ts; this file only has to not fight it.
+ */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+#viewport {
+  display: block;
+  margin: 0 auto;
+  image-rendering: pixelated;
+  touch-action: none;
+}

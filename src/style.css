@@ -1,0 +1,72 @@
+html {
+  background-color: black;
+}
+
+#root {
+  color: #54e508;
+  margin: 15px;
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  border: 2px solid #54e508;
+}
+
+.aligner {
+  height: 100%;
+  display: flex;
+  justify-content: center; /* align horizontal */
+  align-items: center; /* align vertical */
+}
+
+.text {
+  text-align: center;
+  margin: 25px;
+  font-family: 'Press Start 2P', cursive;
+}
+
+.signature {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+}
+
+.coming-soon {
+  border: 2px solid #54e508;
+}
+
+/*
+ * The two links.
+ *
+ * `display: block` is load-bearing, not cosmetic. `.coming-soon` was a div;
+ * an <a> is inline, and an inline element takes no vertical margin and shrinks
+ * its border box to the text. Without this the bordered box collapses and the
+ * 25px margin from `.text` silently stops applying, so restoring block
+ * reproduces the old box model exactly.
+ *
+ * `color: inherit` keeps #54e508 rather than the UA's link blue/purple, and
+ * matters most for :visited, which would otherwise recolour on a second visit.
+ */
+a.coming-soon,
+a.play {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.play {
+  border: 2px solid #54e508;
+}
+
+/*
+ * :focus-visible alongside :hover so the keyboard path is not a dead end --
+ * these are the only two controls on the page.
+ */
+a.coming-soon:hover,
+a.play:hover,
+a.coming-soon:focus-visible,
+a.play:focus-visible {
+  background: #54e508;
+  color: #000;
+}
