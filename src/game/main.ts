@@ -16,6 +16,7 @@ import { buildPickupView, posePickup } from './pickups/render.ts'
 import { LIME } from './data/palette.ts'
 import { buildDoors, resetDoors, tickDoors, tryOpen, useHint, useTarget } from './world/doors.ts'
 import { DoorViews } from './world/doorview.ts'
+import { createExplored, resetExplored, revealFrom } from './world/explored.ts'
 import { atExit, createSession, finishLevel, tickRun } from './session.ts'
 import { createTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
 import { browserStorage, loadRecords, recordTime, saveRecords } from './save/scores.ts'
@@ -135,8 +136,17 @@ for (const entity of level.entities) {
 const player = createPlayer(level)
 const health = createHealth()
 const arsenal = createArsenal()
-const screen = new ScreenLayer()
+const screen = new ScreenLayer(level)
 const keys = new Set<string>()
+
+const explored = createExplored(level)
+/**
+ * How many cells the map holds, so the minimap knows when to repaint.
+ *
+ * Counted rather than recomputed from the fog every frame: `revealFrom` already
+ * reports what it added, and summing that is free next to walking every cell.
+ */
+let charted = 0
 
 const session = createSession(level, live.length, pickups.length)
 const store = browserStorage()
@@ -228,6 +238,9 @@ function restart(): void {
   }
 
   resetPickups(pickups)
+  resetExplored(explored)
+  charted = 0
+  screen.clearMinimap()
   // `cell.open` outlives a restart because the Level object is reused -- that
   // is the whole reason this is not a page reload. Without resetDoors the
   // second run starts with every door already standing open.
@@ -572,6 +585,11 @@ new Loop({
       posePickup(pickupViews[i], pickups[i], s, level.wallHeight, itemClock)
     }
     doorViews.sync(doors, level)
+
+    // After the doors, so a door opened this frame charts what it opened onto
+    // rather than waiting for the player to take another step.
+    charted += revealFrom(level, explored, player.x, player.z)
+    screen.updateMinimap(level, explored, player.x, player.z, player.yaw, charted)
 
     tickHealth(health, dt)
     snarlTimer = Math.max(0, snarlTimer - dt)
