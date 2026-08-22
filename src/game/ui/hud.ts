@@ -17,8 +17,8 @@ import { definition } from '../weapons/arsenal.ts'
  */
 
 const WIDTH = 320
-// Tall enough for the 26px portrait plus its frame and a little breathing room.
-const HEIGHT = 34
+// Tall enough for the 32px portrait plus its frame.
+const HEIGHT = 38
 const LIME = '#54e508'
 const DIM = '#2c7a06'
 const RED = '#c8341a'
@@ -86,14 +86,14 @@ export class Hud {
     // Health, left. Turns red under a quarter so the warning is peripheral --
     // you should not have to read a number to know you are in trouble.
     const critical = health.hp / health.hpMax <= 0.25
-    drawText(ctx, 'HEALTH', 8, 5, DIM, 1)
-    drawText(ctx, `${Math.ceil(health.hp)}%`, 8, 15, critical ? RED : LIME, 2)
+    drawText(ctx, 'HEALTH', 8, 7, DIM, 1)
+    drawText(ctx, `${Math.ceil(health.hp)}%`, 8, 18, critical ? RED : LIME, 2)
 
     // Armour, next along, dimmed to nothing when there is none.
-    drawText(ctx, 'ARMOUR', 70, 5, DIM, 1)
-    drawText(ctx, `${Math.ceil(health.armour)}%`, 70, 15, health.armour > 0 ? LIME : DIM, 2)
+    drawText(ctx, 'ARMOUR', 70, 7, DIM, 1)
+    drawText(ctx, `${Math.ceil(health.armour)}%`, 70, 18, health.armour > 0 ? LIME : DIM, 2)
 
-    this.drawFace(faceBucket(health), 148, 4)
+    this.drawFace(faceBucket(health), 144, 3)
 
     // Keys, as three small pips. Present ones light up.
     const keyColours: [string, string][] = [
@@ -103,14 +103,14 @@ export class Hud {
     ]
     keyColours.forEach(([name, colour], i) => {
       ctx.fillStyle = keys.has(name) ? colour : '#1d2a16'
-      ctx.fillRect(196, 6 + i * 8, 6, 6)
+      ctx.fillRect(186, 8 + i * 8, 6, 6)
     })
 
     // Weapon and ammo, right-aligned so the numbers do not jump about as they
     // change width.
     const def = definition(arsenal)
     const name = def.name.toUpperCase()
-    drawText(ctx, name, WIDTH - 8 - measureText(name, 1), 5, DIM, 1)
+    drawText(ctx, name, WIDTH - 8 - measureText(name, 1), 7, DIM, 1)
 
     const ammoText = def.ammo === null ? '--' : `${arsenal.ammo[def.ammo]}`
     const empty = def.ammo !== null && arsenal.ammo[def.ammo] <= 0
