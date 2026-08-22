@@ -109,6 +109,14 @@ exactly and needs no destination cell. A sideways slide is still a one-line
 change in `doorview.ts` if a later level wants one, but it would need a new
 level invariant that the far cell is solid.
 
+**G4 shipped three new enemy types, not five.** The plan called for seven in
+total. Two more would have been a longer roster rather than a deeper one, and
+there is one level to spread them across -- what makes the set work is that no
+two are answered by the same habit, and five already covers standing still,
+standing at range, killing at arm's length, being caught in the open, and
+fighting head-on in a corridor. The count is worth revisiting in G6, when there
+is somewhere to put more.
+
 **The exit loops back to E1M1 rather than advancing.** E1M2-E1M5 do not exist
 yet, so the tally screen replays the level. `session.ts` holds nothing that
 assumes one level; a level registry is what G6 adds.
