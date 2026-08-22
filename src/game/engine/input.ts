@@ -11,7 +11,8 @@
  * ZQSD.
  */
 
-export type Action = 'forward' | 'back' | 'left' | 'right' | 'use' | 'fire' | 'run'
+export type Action =
+  'forward' | 'back' | 'left' | 'right' | 'use' | 'fire' | 'run' | 'mute' | 'louder' | 'quieter'
 
 const BINDINGS: Record<string, Action> = {
   KeyW: 'forward',
@@ -22,6 +23,11 @@ const BINDINGS: Record<string, Action> = {
   KeyD: 'right',
   KeyE: 'use',
   Space: 'use',
+  KeyM: 'mute',
+  BracketRight: 'louder',
+  BracketLeft: 'quieter',
+  Equal: 'louder',
+  Minus: 'quieter',
   ShiftLeft: 'run',
   ShiftRight: 'run',
 }
@@ -42,6 +48,10 @@ export class Input {
   private wheelDelta = 0
   /** Set on the press edge of the use key, cleared when consumed. */
   private usePressed = false
+  /** Same, for the music toggle. */
+  private mutePressed = false
+  /** Net volume notches since the last consume. */
+  private volumeDelta = 0
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -113,6 +123,26 @@ export class Input {
     return out
   }
 
+  /** True once per physical press of the music key. */
+  consumeMute(): boolean {
+    const out = this.mutePressed
+    this.mutePressed = false
+    return out
+  }
+
+  /**
+   * Net volume notches since the last call. Positive is louder.
+   *
+   * Accumulated rather than latched to one press, because this is the one
+   * binding where key repeat is wanted: holding the key should walk the volume
+   * rather than move it once and stop.
+   */
+  consumeVolume(): number {
+    const out = this.volumeDelta
+    this.volumeDelta = 0
+    return out
+  }
+
   private onWheel = (e: WheelEvent) => {
     if (!this.engaged) return
     this.wheelDelta += e.deltaY > 0 ? 1 : -1
@@ -134,7 +164,14 @@ export class Input {
     e.preventDefault()
     // Latched before the add, so `held` still lacks the action on a genuine
     // first press and already has it on every auto-repeat.
-    if (action === 'use' && !this.held.has(action)) this.usePressed = true
+    // Volume is read on every keydown INCLUDING the OS repeats, so holding it
+    // slides. The other two latch on the press edge only.
+    if (action === 'louder') this.volumeDelta++
+    else if (action === 'quieter') this.volumeDelta--
+    else if (!this.held.has(action)) {
+      if (action === 'use') this.usePressed = true
+      if (action === 'mute') this.mutePressed = true
+    }
     this.held.add(action)
   }
 
@@ -153,6 +190,8 @@ export class Input {
     this.slotQueue.length = 0
     this.wheelDelta = 0
     this.usePressed = false
+    this.mutePressed = false
+    this.volumeDelta = 0
   }
 
   private onMouseDown = () => {
@@ -169,11 +208,34 @@ export class Input {
 
   private onLockChange = () => {
     const nowEngaged = document.pointerLockElement === this.canvas
-    if (nowEngaged && !this.engaged) this.onEngage?.()
+    const engaging = nowEngaged && !this.engaged
+
+    // State first, callback second, and the callback cannot throw out of here.
+    //
+    // `onEngage` is where everything that needs a user gesture happens --
+    // unlocking audio, starting the music -- and it used to run BEFORE
+    // `engaged` was set. So anything that threw in there left `engaged` false
+    // for good: pointer lock held, mouse captured, and the loop bailing out
+    // every frame to put the click-to-play gate back up. The game looked like
+    // the button had simply stopped working, and no amount of clicking fixed
+    // it because the lock was already taken.
+    //
+    // Input's job is input. It must not be taken down by something that
+    // merely wanted to know when input started.
     this.engaged = nowEngaged
     if (!nowEngaged) {
       this.held.clear()
       this.usePressed = false
+      this.mutePressed = false
+      this.volumeDelta = 0
+    }
+
+    if (engaging) {
+      try {
+        this.onEngage?.()
+      } catch (error) {
+        console.error('engage handler failed; carrying on without it', error)
+      }
     }
   }
 
