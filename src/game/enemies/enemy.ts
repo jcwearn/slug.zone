@@ -107,6 +107,24 @@ export function updateEnemy(
 }
 
 /**
+ * How much of a shot gets through, given where it came from.
+ *
+ * 1 for anything unarmoured, or for a hit that lands outside the plating.
+ *
+ * The bearing is measured from the ENEMY to the shooter and compared against
+ * the direction the enemy is facing, which is the same convention the sight
+ * cone uses -- so the side it is looking at is the side it is protecting, and
+ * a player who walks around behind it is rewarded for the same reason they are
+ * rewarded for staying out of its cone.
+ */
+export function armourScale(enemy: Enemy, fromX: number, fromZ: number): number {
+  const armour = enemy.def.armour
+  if (!armour) return 1
+  const bearing = Math.atan2(-(fromX - enemy.x), -(fromZ - enemy.z))
+  return Math.abs(angleDelta(enemy.facing, bearing)) <= armour.arc ? armour.multiplier : 1
+}
+
+/**
  * Damage the burst of a just-killed enemy does to a body at (x, z).
  *
  * Falls off linearly to nothing at the rim, so standing at the edge is worth

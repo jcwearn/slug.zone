@@ -63,6 +63,19 @@ const level: LevelSource = {
     { type: 'grub', x: 6.5, z: 1.5 },
     { type: 'grub', x: 8.5, z: 1.5 },
     { type: 'spitter', x: 1.5, z: 5.5 },
+
+    // The rest of the roster, out past the opening encounter, each put where
+    // the thing it punishes is the thing the room invites.
+    //
+    // A Slimebloat shares the corridor with the Grinder, so the first one you
+    // meet is the first one you are tempted to walk up to and shotgun.
+    { type: 'slimebloat', x: 7.5, z: 11.5 },
+    // A Shellback in the 3x5 room past the unkeyed door -- the only space on
+    // the level with room enough to walk around one, which is the answer to it.
+    { type: 'shellback', x: 11.5, z: 4.5 },
+    // A Brute in the red vault. A charger in a 3x3 room with the only way out
+    // behind you is the fight it was built for.
+    { type: 'brute', x: 14.5, z: 12.5 },
     // The Grinder is no longer handed out at spawn, so this is the only one in
     // the level and it is a long way south of where you start -- the first
     // encounter is deliberately meant to be fought with the Shaker.
