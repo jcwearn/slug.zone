@@ -7,6 +7,7 @@ import { raycast } from './engine/collision.ts'
 import { parseLevel } from './world/level.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
+import { aimDirection, shotEndpoint } from './player/aim.ts'
 import { SLUG_BROWN, SLUG_DARK } from './data/palette.ts'
 import {
   addAmmo,
@@ -86,27 +87,41 @@ let lastPhase = arsenal.phase
 
 /** Hitscan one pellet and draw what it did. */
 function shootPellet(angleOffset: number): void {
-  const yaw = player.yaw + angleOffset
-  // Same basis as movement: a three.js camera looks down its own -Z.
-  const dirX = -Math.sin(yaw)
-  const dirZ = -Math.cos(yaw)
   const def = definition(arsenal)
+  const dir = aimDirection(player.yaw + angleOffset, player.pitch)
 
-  const hit = raycast(level, player.x, player.z, dirX, dirZ, def.range)
-  const distance = hit ? hit.distance : def.range
+  // The wall raycast is 2D on the ground plane, so it yields a HORIZONTAL
+  // distance; shotEndpoint converts that to a distance along the pitched ray
+  // and clips it against the floor and ceiling.
+  const horizontal = Math.hypot(dir.x, dir.z)
+  const wallHit =
+    horizontal > 1e-6 ? raycast(level, player.x, player.z, dir.x, dir.z, def.range) : null
 
   const eyeY = (EYE_HEIGHT + player.eyeOffset) * level.wallHeight
-  const muzzleY = eyeY - 0.12 * level.wallHeight
-  const endX = (player.x + dirX * distance) * s
-  const endZ = (player.z + dirZ * distance) * s
-  // Pitch only tilts the tracer; the hitscan itself is on the ground plane
-  // until enemies have height in G3.
-  const endY = eyeY + Math.tan(player.pitch) * distance * s * -1
+  const end = shotEndpoint(
+    eyeY * s,
+    dir,
+    (wallHit ? wallHit.distance : Infinity) * s,
+    def.range * s,
+    0,
+    level.wallHeight * s,
+  )
 
-  tracers.emitShot(player.x * s, muzzleY, player.z * s, endX, endY, endZ, 5)
+  const originX = player.x * s
+  const originZ = player.z * s
+  const muzzleY = eyeY * s - 0.1 * s
 
-  if (hit) {
-    tracers.emitImpact(endX, endY, endZ, hit.normalX, hit.normalZ, rng)
+  const endX = originX + dir.x * end.distance
+  const endY = eyeY * s + dir.y * end.distance
+  const endZ = originZ + dir.z * end.distance
+
+  tracers.emitShot(originX, muzzleY, originZ, endX, endY, endZ, 5)
+
+  if (end.stoppedBy !== 'range') {
+    // Scatter off whatever was actually hit, using that surface's normal.
+    const nx = end.stoppedBy === 'wall' && wallHit ? wallHit.normalX : 0
+    const nz = end.stoppedBy === 'wall' && wallHit ? wallHit.normalZ : 0
+    tracers.emitImpact(endX, endY, endZ, nx, nz, rng)
     playImpact()
   }
 }

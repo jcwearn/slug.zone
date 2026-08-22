@@ -3,6 +3,7 @@ import { LIME } from '../data/palette.ts'
 import type { Arsenal } from './arsenal.ts'
 import { LOWER_TIME } from './arsenal.ts'
 import { WEAPONS } from './definitions.ts'
+import { Crosshair } from '../ui/crosshair.ts'
 
 /**
  * The weapon in the player's hands, plus the muzzle flash.
@@ -22,6 +23,7 @@ export class Viewmodel {
   private readonly shaker: THREE.Group
   private readonly grinder: THREE.Group
   private readonly flash: THREE.Mesh
+  private readonly crosshair = new Crosshair()
   private flashTimer = 0
   private kick = 0
 
@@ -55,6 +57,10 @@ export class Viewmodel {
     this.flash.position.set(0, 0.04, -0.16)
     this.flash.visible = false
     this.root.add(this.flash)
+
+    // Added to the scene, not to `root` -- the crosshair must stay dead centre
+    // while the weapon sways, bobs and kicks around it.
+    this.scene.add(this.crosshair.mesh)
   }
 
   onFire(): void {
@@ -96,6 +102,7 @@ export class Viewmodel {
   }
 
   dispose(): void {
+    this.crosshair.dispose()
     this.scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
         obj.geometry.dispose()
