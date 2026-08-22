@@ -23,6 +23,8 @@ import { createTally, pressTally, snapTally, stepTally, type Tally } from './ui/
 import { browserStorage, loadRecords, recordTime, saveRecords } from './save/scores.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
+  armourScale,
+  burstDamage,
   enemyCylinder,
   separateEnemies,
   spawnEnemy,
@@ -361,7 +363,11 @@ function shootPellet(angleOffset: number): void {
   const struck = nearestHit(muzzleX, muzzleY, muzzleZ, dir.x, dir.y, dir.z, targets, end.distance)
 
   if (struck) {
-    const dealt = damageAtRange(def, struck.distance / s)
+    // Armour is applied at the shot rather than inside `damage`, because it
+    // is the only rule here that depends on where the shot came FROM -- and
+    // the mind has no idea where the player is standing.
+    const shield = armourScale(struck.target, player.x, player.z)
+    const dealt = damageAtRange(def, struck.distance / s) * shield
     const wasAlive = isAlive(struck.target.mind)
     damageEnemy(struck.target.mind, struck.target.def, dealt, rng)
 
@@ -374,6 +380,11 @@ function shootPellet(angleOffset: number): void {
     if (wasAlive && struck.target.mind.justDied) {
       if (struck.target.mind.gibbed) playGib()
       else playSquelch(rng())
+    } else if (shield < 1) {
+      // A ricochet, not a squelch. A creature soaking nine tenths of every
+      // shot while still sounding wet reads as a broken weapon rather than as
+      // armour, and the player never works out to go round it.
+      playImpact()
     } else {
       playSquelch(rng() * 0.5)
     }
@@ -529,7 +540,29 @@ new Loop({
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
       // `justDied` is already a one-tick flag, so no edge tracking needed.
-      if (entry.enemy.mind.justDied) session.kills++
+      if (entry.enemy.mind.justDied) {
+        session.kills++
+        // Whatever it was carrying goes off where it stood. Checked here
+        // rather than at the shot, because a slug can also be killed by
+        // another slug's burst -- and a chain reaction is the point of them.
+        const blast = burstDamage(entry.enemy, player.x, player.z)
+        if (blast > 0) {
+          const result = damagePlayer(health, blast)
+          if (result.died) playDeath()
+          else if (result.applied) playHurt(rng())
+        }
+        if (entry.enemy.def.deathBurst) {
+          tracers.emitImpact(
+            entry.enemy.x * s,
+            space.eyeY(entry.enemy.def.height * 0.5),
+            entry.enemy.z * s,
+            0,
+            0,
+            rng,
+          )
+          playSplat()
+        }
+      }
 
       // The strike lands at the end of the wind-up, and only if the player is
       // still in range -- the FSM already decided that.

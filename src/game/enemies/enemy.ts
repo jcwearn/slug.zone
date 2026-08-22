@@ -73,14 +73,16 @@ export function updateEnemy(
     enemy.facing += Math.abs(delta) <= maxTurn ? delta : Math.sign(delta) * maxTurn
   }
 
-  if (intent.move && distance > 1e-4) {
-    const speed = enemy.def.speed * dt
+  if (intent.velocity !== 0 && distance > 1e-4) {
+    // Signed: a negative velocity walks the same line backwards, which is how
+    // a Spitter gives ground without ever turning its back on the player.
+    const travel = intent.velocity * dt
     const moved = moveWithCollision(
       level,
       enemy.x,
       enemy.z,
-      (dx / distance) * speed,
-      (dz / distance) * speed,
+      (dx / distance) * travel,
+      (dz / distance) * travel,
       enemy.def.radius,
     )
     enemy.x = moved.x
@@ -102,6 +104,42 @@ export function updateEnemy(
     enemy.x = clear.x
     enemy.z = clear.z
   }
+}
+
+/**
+ * How much of a shot gets through, given where it came from.
+ *
+ * 1 for anything unarmoured, or for a hit that lands outside the plating.
+ *
+ * The bearing is measured from the ENEMY to the shooter and compared against
+ * the direction the enemy is facing, which is the same convention the sight
+ * cone uses -- so the side it is looking at is the side it is protecting, and
+ * a player who walks around behind it is rewarded for the same reason they are
+ * rewarded for staying out of its cone.
+ */
+export function armourScale(enemy: Enemy, fromX: number, fromZ: number): number {
+  const armour = enemy.def.armour
+  if (!armour) return 1
+  const bearing = Math.atan2(-(fromX - enemy.x), -(fromZ - enemy.z))
+  return Math.abs(angleDelta(enemy.facing, bearing)) <= armour.arc ? armour.multiplier : 1
+}
+
+/**
+ * Damage the burst of a just-killed enemy does to a body at (x, z).
+ *
+ * Falls off linearly to nothing at the rim, so standing at the edge is worth
+ * something -- a flat blast makes the radius a cliff, and a cliff you cannot
+ * see is indistinguishable from a bug.
+ *
+ * Returns 0 for anything with no burst, out of range, or not freshly dead, so
+ * the caller can apply it unconditionally.
+ */
+export function burstDamage(enemy: Enemy, x: number, z: number): number {
+  const burst = enemy.def.deathBurst
+  if (!burst || !enemy.mind.justDied) return 0
+  const distance = Math.hypot(x - enemy.x, z - enemy.z)
+  if (distance >= burst.radius) return 0
+  return burst.damage * (1 - distance / burst.radius)
 }
 
 /** Hit volume in WORLD units. */

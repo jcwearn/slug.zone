@@ -34,6 +34,47 @@ export interface EnemyDef {
   color: number
   darkColor: number
   /**
+   * Which body the renderer builds. Colour and scale alone make a recoloured
+   * Grub, not a new creature.
+   */
+  shape: 'slug' | 'bloat' | 'brute' | 'shell'
+  /**
+   * Armour that only covers one side, or null for a soft-all-over slug.
+   *
+   * `arc` is the half-angle around its facing that the plating covers, and
+   * `multiplier` is what a hit inside it is scaled by. This is the one thing
+   * in the roster that asks the player to move rather than to aim, so the arc
+   * is wide enough that walking around it is the answer rather than strafing
+   * a few degrees and carrying on.
+   */
+  armour: { arc: number; multiplier: number } | null
+  /**
+   * Backs away when the player gets nearer than this, in grid units. 0 for an
+   * enemy that always closes.
+   *
+   * Kiting, not fleeing: it still attacks whenever its cooldown is up, and
+   * only gives ground between shots. An enemy that retreats INSTEAD of
+   * attacking becomes harmless the moment it is cornered, which turns the one
+   * dangerous thing in the room into a free kill.
+   */
+  standoff: number
+  /**
+   * Speed while winding up an attack, in grid units per second, or null for
+   * an enemy that plants its feet to swing.
+   *
+   * A charger closes during the telegraph rather than before it, so the
+   * wind-up reads as a lunge you have to move out of rather than a pause.
+   */
+  charge: number | null
+  /**
+   * Damage dealt to everything within `radius` when it dies, or null.
+   *
+   * The counterweight to the shotgun: something that punishes killing it from
+   * arm's length gives the Salt Shaker a job at range that the Grinder cannot
+   * do for it.
+   */
+  deathBurst: { damage: number; radius: number } | null
+  /**
    * Ranged attack, or null for a melee enemy.
    *
    * Melee damage lands the instant the wind-up ends. Ranged damage is carried

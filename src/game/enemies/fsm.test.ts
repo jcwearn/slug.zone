@@ -53,7 +53,7 @@ describe('idle', () => {
   it('starts idle and does nothing without a player', () => {
     expect(mind.state).toBe('idle')
     const intent = step(mind, grub, blind, STEP)
-    expect(intent).toEqual({ move: false, turn: false })
+    expect(intent).toEqual({ velocity: 0, turn: false })
   })
 
   it('does not turn to track a player it has not noticed', () => {
@@ -77,7 +77,7 @@ describe('alert', () => {
 
   it('turns during the reaction beat so the wind-up is visible', () => {
     step(mind, grub, seeing(6), STEP)
-    expect(step(mind, grub, seeing(6), STEP)).toMatchObject({ move: false, turn: true })
+    expect(step(mind, grub, seeing(6), STEP)).toMatchObject({ velocity: 0, turn: true })
   })
 })
 
@@ -87,11 +87,11 @@ describe('chase', () => {
   })
 
   it('moves toward a visible player', () => {
-    expect(step(mind, grub, seeing(6), STEP)).toMatchObject({ move: true, turn: true })
+    expect(step(mind, grub, seeing(6), STEP)).toMatchObject({ velocity: grub.speed, turn: true })
   })
 
   it('keeps coming after losing sight, so cover is not an off switch', () => {
-    expect(step(mind, grub, blind, STEP).move).toBe(true)
+    expect(step(mind, grub, blind, STEP).velocity).toBe(grub.speed)
     expect(mind.state).toBe('chase')
   })
 
@@ -103,7 +103,7 @@ describe('chase', () => {
   it('holds position in range while reloading rather than shuffling closer', () => {
     advance(mind, seeing(0.5), grub.attackWindup + 2 * STEP)
     expect(mind.attackCooldown).toBeGreaterThan(0)
-    expect(step(mind, grub, seeing(0.5), STEP).move).toBe(false)
+    expect(step(mind, grub, seeing(0.5), STEP).velocity).toBe(0)
   })
 })
 
@@ -227,7 +227,7 @@ describe('damage and death', () => {
   it('takes no action at all once dead', () => {
     damage(mind, grub, 999, never)
     advance(mind, seeing(6), grub.dyingTime + STEP)
-    expect(step(mind, grub, seeing(1), STEP)).toEqual({ move: false, turn: false })
+    expect(step(mind, grub, seeing(1), STEP)).toEqual({ velocity: 0, turn: false })
   })
 
   it('clears the one-tick flags on the next step', () => {
@@ -264,4 +264,115 @@ describe('every enemy definition', () => {
       expect(def.height).toBeLessThanOrEqual(1)
     },
   )
+})
+
+describe('standoff', () => {
+  const kiter = ENEMIES.spitter
+
+  /** Walk the machine to a settled chase, past the reaction beat. */
+  const chasing = (def = kiter, p: Perception = seeing(10)): EnemyMind => {
+    const slug = createMind(def)
+    for (let t = 0; t < def.reactionTime + STEP * 2; t += STEP) step(slug, def, p, STEP)
+    return slug
+  }
+
+  it('gives ground when the player gets inside it', () => {
+    const slug = chasing()
+    slug.attackCooldown = 5 // reloading, so the attack branch cannot fire
+    const intent = step(slug, kiter, seeing(kiter.standoff - 1), STEP)
+    expect(intent.velocity).toBe(-kiter.speed)
+    expect(intent.turn, 'it backs away without turning its back').toBe(true)
+  })
+
+  it('holds its ground at exactly the standoff distance', () => {
+    const slug = chasing()
+    slug.attackCooldown = 5
+    expect(step(slug, kiter, seeing(kiter.standoff), STEP).velocity).toBe(0)
+  })
+
+  it('still attacks from inside the standoff rather than fleeing', () => {
+    // The failure this guards: a kiter that retreats INSTEAD of attacking backs
+    // into a wall, stays there, and becomes a free kill -- the most dangerous
+    // thing in the room turned harmless by walking at it.
+    const slug = chasing()
+    slug.attackCooldown = 0
+    const intent = step(slug, kiter, seeing(kiter.standoff - 1), STEP)
+    expect(slug.state).toBe('attack')
+    expect(intent.velocity).toBe(0)
+  })
+
+  it('closes as normal when the player is far off', () => {
+    const slug = chasing()
+    slug.attackCooldown = 5
+    expect(step(slug, kiter, seeing(kiter.attackRange + 3), STEP).velocity).toBe(kiter.speed)
+  })
+
+  it('leaves an enemy with no standoff walking straight in', () => {
+    const slug = chasing(grub, seeing(6))
+    slug.attackCooldown = 5
+    expect(grub.standoff).toBe(0)
+    expect(step(slug, grub, seeing(0.5), STEP).velocity).toBe(0)
+    expect(step(slug, grub, seeing(6), STEP).velocity).toBe(grub.speed)
+  })
+
+  it('does not back away from a player it has never noticed', () => {
+    // Reachable, not synthetic: shoot a sleeping slug from outside its cone
+    // and `damage` puts it in pain and then in chase without it ever having
+    // seen anyone. Without the guard it moonwalks away from a player it does
+    // not know is there.
+    //
+    // Sight is broken and the cooldown is long on purpose. With either of them
+    // available the attack branch answers first and this passes whatever the
+    // standoff rule does -- which is exactly how the first version of this
+    // test managed to survive deleting the guard it was written for.
+    const slug = createMind(kiter)
+    slug.state = 'chase'
+    slug.attackCooldown = 5
+    const unseen: Perception = { distance: 1, hasLineOfSight: false, angleToPlayer: Math.PI }
+
+    expect(slug.provoked).toBe(false)
+    expect(step(slug, kiter, unseen, STEP).velocity).toBe(0)
+  })
+})
+
+describe('charge', () => {
+  const brute = { ...grub, charge: 9, attackWindup: 0.4, attackRange: 1.5 }
+
+  it('closes during its own wind-up', () => {
+    const slug = createMind(brute)
+    slug.state = 'chase'
+    slug.provoked = true
+    step(slug, brute, seeing(1), STEP)
+    expect(slug.state).toBe('attack')
+
+    const intent = step(slug, brute, seeing(1), STEP)
+    expect(intent.velocity).toBe(brute.charge)
+  })
+
+  it('plants its feet if it has no charge', () => {
+    const slug = createMind(grub)
+    slug.state = 'chase'
+    slug.provoked = true
+    step(slug, grub, seeing(0.5), STEP)
+    expect(slug.state).toBe('attack')
+    expect(step(slug, grub, seeing(0.5), STEP).velocity).toBe(0)
+  })
+
+  it('stops the moment the strike lands', () => {
+    // Otherwise it keeps lunging through the player after connecting.
+    const slug = createMind(brute)
+    slug.state = 'chase'
+    slug.provoked = true
+    step(slug, brute, seeing(1), STEP)
+
+    // `didStrike` is a one-tick flag, so the intent has to be caught on the
+    // tick it is raised rather than read after the loop has run past it.
+    let onStrike: { velocity: number; turn: boolean } | null = null
+    for (let t = 0; t < brute.attackWindup + STEP * 2; t += STEP) {
+      const intent = step(slug, brute, seeing(1), STEP)
+      if (slug.didStrike) onStrike = intent
+    }
+    expect(onStrike, 'the strike never landed').not.toBeNull()
+    expect(onStrike?.velocity).toBe(0)
+  })
 })

@@ -4,18 +4,27 @@ import { hasLineOfSight } from '../../engine/collision.ts'
 import e1m1 from './e1m1.ts'
 
 /**
- * While the enemies are deliberately clustered at the spawn for playtesting,
- * "near the start" has to mean visible from it -- not merely close in grid
- * distance.
+ * The opening encounter has to be visible from the spawn -- "near the start"
+ * must mean findable, not merely close in grid distance.
  *
  * The check that was missing: a grub placed on open, reachable ground passed
  * every existing assertion while sitting behind a wall in a corridor you cannot
  * see into, so only three of four ever appeared. Reachable is not findable.
+ *
+ * It applies to the OPENING encounter only, and it did not always. Every enemy
+ * in the level used to have to be visible from the spawn, which was right when
+ * they were all clustered there for playtesting and is wrong now: with a HUD,
+ * an automap and doors that open, the rest of the level is meant to be walked
+ * into rather than surveyed from the door. Holding the whole roster to it would
+ * make the only legal level design a single room.
  */
+const NEAR_SPAWN = 10
+
 describe('e1m1 starting encounter', () => {
   const level = parseLevel(e1m1)
   const start = level.playerStart
-  const enemies = level.entities.filter((e) => e.type !== 'pickup')
+  const all = level.entities.filter((e) => e.type !== 'pickup')
+  const enemies = all.filter((e) => Math.hypot(e.x - start.x, e.z - start.z) < NEAR_SPAWN)
 
   it('has enemies to fight', () => {
     expect(enemies.length).toBeGreaterThanOrEqual(4)
@@ -48,10 +57,10 @@ describe('e1m1 starting encounter', () => {
     },
   )
 
-  it.each(enemies.map((e, i) => [`${e.type} #${i}`, e] as const))(
-    '%s is close enough to walk to immediately',
-    (_label, enemy) => {
-      expect(Math.hypot(enemy.x - start.x, enemy.z - start.z)).toBeLessThan(10)
-    },
-  )
+  it('keeps the rest of the roster out of sight of the door', () => {
+    // The other half of the change: if everything in the level were within
+    // NEAR_SPAWN, this file would be asserting the same thing it used to and
+    // the relaxation would be untested.
+    expect(all.length).toBeGreaterThan(enemies.length)
+  })
 })
