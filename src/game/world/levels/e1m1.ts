@@ -63,9 +63,21 @@ const level: LevelSource = {
     { type: 'grub', x: 6.5, z: 1.5 },
     { type: 'grub', x: 8.5, z: 1.5 },
     { type: 'spitter', x: 1.5, z: 5.5 },
+    // The Grinder is no longer handed out at spawn, so this is the only one in
+    // the level and it is a long way south of where you start -- the first
+    // encounter is deliberately meant to be fought with the Shaker.
     { type: 'pickup', item: 'grinder', x: 5.5, z: 11.5 },
     { type: 'pickup', item: 'health', x: 14.5, z: 4.5 },
     { type: 'pickup', item: 'redkey', x: 3.5, z: 13.5 },
+
+    // Every one of these sits in a cell reachable with the doors still shut.
+    // Doors do not open until the next phase, and an item stranded behind one
+    // is an item nobody can prove exists.
+    { type: 'pickup', item: 'armourshard', x: 3.5, z: 5.5 },
+    { type: 'pickup', item: 'coarse', x: 7.5, z: 7.5 },
+    { type: 'pickup', item: 'coarsebox', x: 16.5, z: 9.5 },
+    { type: 'pickup', item: 'armour', x: 11.5, z: 15.5 },
+    { type: 'pickup', item: 'medkit', x: 18.5, z: 12.5 },
   ],
   par: 90_000,
 }

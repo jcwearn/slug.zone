@@ -9,8 +9,11 @@ import { worldSpace } from './world/space.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
 import { createHealth, damagePlayer, tickHealth } from './player/health.ts'
-import { ScreenLayer } from './ui/screen.ts'
+import { ScreenLayer, type Notice } from './ui/screen.ts'
 import type { Expression } from './ui/face.ts'
+import { collect, createPickups, pickupsTouching, resetPickups } from './pickups/pickups.ts'
+import { buildPickupView, posePickup } from './pickups/render.ts'
+import { LIME } from './data/palette.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
   enemyCylinder,
@@ -26,13 +29,11 @@ import { nearestHit, verticalAutoAim } from './enemies/hitscan.ts'
 import { Globs } from './enemies/projectiles.ts'
 import { GlobRenderer } from './enemies/globrender.ts'
 import {
-  addAmmo,
   createArsenal,
   cycleWeapon,
   damageAtRange,
   definition,
   fire,
-  giveWeapon,
   selectSlot,
   tickArsenal,
 } from './weapons/arsenal.ts'
@@ -51,12 +52,17 @@ import {
   playSplat,
   playSpit,
   playSwitch,
+  playPickup,
+  playKeyPickup,
   unlockAudio,
 } from './audio/sfx.ts'
 import e1m1 from './world/levels/e1m1.ts'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#viewport')
 if (!canvas) throw new Error('#viewport canvas missing')
+
+/** The site lime, as the message line's CSS colour. Derived, never retyped. */
+const LIME_TEXT = `#${LIME.toString(16).padStart(6, '0')}`
 
 const level = parseLevel(e1m1)
 const view = new RetroRenderer(canvas)
@@ -82,19 +88,12 @@ const globs = new Globs()
 const globRenderer = new GlobRenderer(globs.items.length)
 view.scene.add(globRenderer.mesh)
 
-// Pickups are still inert markers; they become real in G5.
-const markerGeo = new THREE.IcosahedronGeometry(0.5, 0)
-const markerMat = new THREE.MeshLambertMaterial({
-  color: 0x54e508,
-  emissive: 0x143a02,
-  flatShading: true,
+const pickups = createPickups(level)
+const pickupViews = pickups.map((pickup) => {
+  const pickupView = buildPickupView(pickup.def)
+  view.scene.add(pickupView.group)
+  return pickupView
 })
-for (const entity of level.entities.filter((e) => e.type === 'pickup')) {
-  const marker = new THREE.Mesh(markerGeo, markerMat)
-  marker.position.set(entity.x * s, 0.3 * level.wallHeight, entity.z * s)
-  marker.scale.setScalar(s * 0.18)
-  view.scene.add(marker)
-}
 
 interface Live {
   enemy: Enemy
@@ -131,6 +130,8 @@ const keys = new Set<string>()
  */
 let snarlTimer = 0
 let previousYaw = player.yaw
+/** Shared animation phase for every item on the floor. */
+let itemClock = 0
 
 function expressionNow(): Expression {
   if (health.painFlash > 0.25) return 'hurt'
@@ -142,10 +143,21 @@ function expressionNow(): Expression {
 }
 const viewmodel = new Viewmodel()
 
-// Both weapons from the start while there is nothing to pick them up from.
-// The pickup system in G5 is what makes this earned.
-giveWeapon(arsenal, 'grinder')
-addAmmo(arsenal, 'coarse', 24)
+/**
+ * The top-of-screen notice, and how long it has left.
+ *
+ * Long enough to read while running, short enough that it is gone before the
+ * next one arrives -- a line that lingers turns a fight through a supply room
+ * into a stack of stale text.
+ */
+const NOTICE_TIME = 2.2
+let notice: Notice = { text: '', colour: '' }
+let noticeTimer = 0
+
+function say(text: string, colour: string): void {
+  notice = { text, colour }
+  noticeTimer = NOTICE_TIME
+}
 
 const input = new Input(canvas, () => {
   overlay?.classList.add('hidden')
@@ -166,18 +178,20 @@ function restart(): void {
   Object.assign(player, fresh)
 
   Object.assign(health, createHealth())
+  // Back to the Salt Shaker and nothing else. Keeping the Grinder across a
+  // death would make the first run the only one that has to find it.
+  Object.assign(arsenal, createArsenal())
 
   for (const entry of live) {
-    const spawn = level.entities.find(
-      (e) => e.type === entry.enemy.def.id && e.x === entry.spawnX && e.z === entry.spawnZ,
-    )
     entry.enemy = spawnEnemy(entry.enemy.def.id, entry.spawnX, entry.spawnZ)
     entry.wasIdle = true
-    void spawn
   }
 
+  resetPickups(pickups)
   globs.clear()
   keys.clear()
+  notice = { text: '', colour: '' }
+  noticeTimer = 0
   deathScreen?.classList.add('hidden')
 }
 
@@ -317,6 +331,18 @@ new Loop({
     updatePlayer(player, level, input, dt, blockers)
     const moving = Math.hypot(player.x - before.x, player.z - before.z) > 1e-5
 
+    // Collected where the player ACTUALLY ended up, after walls and slugs have
+    // had their say -- testing the position they asked for would let you grab
+    // an item through a door you were standing against.
+    for (const item of pickupsTouching(pickups, player.x, player.z, PLAYER_RADIUS)) {
+      const result = collect(item.def, { health, arsenal, keys })
+      if (!result.taken) continue
+      item.taken = true
+      say(result.message, LIME_TEXT)
+      if (item.def.effect.kind === 'key') playKeyPickup()
+      else playPickup()
+    }
+
     for (const slot of input.consumeSlots()) selectSlot(arsenal, slot)
     const wheel = input.consumeWheel()
     if (wheel !== 0) cycleWeapon(arsenal, wheel > 0 ? 1 : -1)
@@ -410,9 +436,18 @@ new Loop({
 
     for (const entry of live) poseEnemy(entry.view, entry.enemy, s, level.wallHeight, dt)
 
+    // One clock for every item, so a room full of them pulses together rather
+    // than each bobbing on its own phase.
+    itemClock += dt
+    for (let i = 0; i < pickups.length; i++) {
+      posePickup(pickupViews[i], pickups[i], s, level.wallHeight, itemClock)
+    }
+
     tickHealth(health, dt)
     snarlTimer = Math.max(0, snarlTimer - dt)
-    screen.update(health, arsenal, keys, expressionNow())
+    noticeTimer = Math.max(0, noticeTimer - dt)
+    if (noticeTimer === 0 && notice.text !== '') notice = { text: '', colour: '' }
+    screen.update(health, arsenal, keys, expressionNow(), notice)
     previousYaw = player.yaw
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)

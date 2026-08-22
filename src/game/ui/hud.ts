@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { drawText, measureText } from './font.ts'
 import { FaceSheet, FRAME_HEIGHT, FRAME_WIDTH, frameOffset, type Expression } from './face.ts'
+import { KEY_COLOURS } from '../data/palette.ts'
 import { faceBucket, type PlayerHealth } from '../player/health.ts'
 import type { Arsenal } from '../weapons/arsenal.ts'
 import { definition } from '../weapons/arsenal.ts'
@@ -114,13 +115,11 @@ export class Hud {
     this.drawFace(faceBucket(health), expression, 142, 4)
 
     // Keys, as three small pips. Present ones light up.
-    const keyColours: [string, string][] = [
-      ['red', '#c8341a'],
-      ['blue', '#3a6ad0'],
-      ['yellow', '#d0b23a'],
-    ]
-    keyColours.forEach(([name, colour], i) => {
-      ctx.fillStyle = keys.has(name) ? colour : '#1d2a16'
+    //
+    // Colours come from the shared table rather than being written out here,
+    // so the pip and the card lying on the cellar floor cannot drift apart.
+    Object.entries(KEY_COLOURS).forEach(([name, colour], i) => {
+      ctx.fillStyle = keys.has(name) ? `#${colour.toString(16).padStart(6, '0')}` : '#1d2a16'
       ctx.fillRect(128, 10 + i * 10, 6, 6)
     })
 
