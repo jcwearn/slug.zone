@@ -16,6 +16,7 @@ import { buildPickupView, posePickup } from './pickups/render.ts'
 import { LIME } from './data/palette.ts'
 import { buildDoors, resetDoors, tickDoors, tryOpen, useHint, useTarget } from './world/doors.ts'
 import { DoorViews } from './world/doorview.ts'
+import { ExitViews } from './world/exitview.ts'
 import { createExplored, resetExplored, revealFrom } from './world/explored.ts'
 import { atExit, createSession, finishLevel, tickRun } from './session.ts'
 import { createTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
@@ -99,6 +100,9 @@ view.scene.add(meshes.group)
 const doors = buildDoors(level)
 const doorViews = new DoorViews(doors, level)
 view.scene.add(doorViews.group)
+
+const exitViews = new ExitViews(level)
+view.scene.add(exitViews.group)
 
 const tracers = new Tracers()
 view.scene.add(tracers.mesh)
@@ -201,6 +205,10 @@ function say(text: string, colour: string): void {
  * A closed secret deliberately shows nothing -- `useHint` is where that lives.
  */
 function promptNow(): Notice {
+  // Same order as the use key: exit first, doors after.
+  if (atExit(level, player.x, player.z)) {
+    return { text: 'PRESS E TO FINISH THE LEVEL', colour: LIME_TEXT }
+  }
   const hint = useHint(level, doors, player.x, player.z, player.yaw, keys)
   if (hint.kind === 'open') return { text: 'PRESS E TO OPEN', colour: LIME_TEXT }
   if (hint.kind === 'locked') {
@@ -456,6 +464,15 @@ new Loop({
     // Use, before the exit check: a door opened on the tick you step onto the
     // exit should still open.
     if (input.consumeUse()) {
+      // The exit wins, and standing on it is the whole test -- no aiming. It
+      // is checked with the same `atExit` the prompt uses, in the same order,
+      // so the line under the crosshair cannot offer something use will not
+      // do. Anywhere else, use belongs to the doors.
+      if (atExit(level, player.x, player.z)) {
+        completeLevel()
+        return
+      }
+
       const target = useTarget(level, player.x, player.z, player.yaw)
       const result = target
         ? tryOpen(doors, target.x, target.z, keys)
@@ -477,11 +494,6 @@ new Loop({
     }
 
     tickDoors(doors, level, dt)
-
-    if (atExit(level, player.x, player.z)) {
-      completeLevel()
-      return
-    }
 
     for (const slot of input.consumeSlots()) selectSlot(arsenal, slot)
     const wheel = input.consumeWheel()
@@ -585,6 +597,7 @@ new Loop({
       posePickup(pickupViews[i], pickups[i], s, level.wallHeight, itemClock)
     }
     doorViews.sync(doors, level)
+    exitViews.update(dt)
 
     // After the doors, so a door opened this frame charts what it opened onto
     // rather than waiting for the player to take another step.

@@ -5,6 +5,7 @@ import {
   LevelParseError,
   parseLevel,
   reachableFromStart,
+  unmarkableExits,
   unreachableWalkableCells,
 } from './level.ts'
 import type { LevelSource } from './types.ts'
@@ -234,6 +235,37 @@ describe('reachability', () => {
   })
 })
 
+describe('unmarkableExits', () => {
+  it('reports an exit standing in open floor', () => {
+    // Nothing to mount a sign on, so the way out is invisible and the level
+    // ends when somebody happens to walk over the right square.
+    const level = parseLevel(
+      withGrid(['#####', '#...#', '#.X.#', '#...#', '#####'], {
+        entities: [{ type: 'player', x: 1.5, z: 1.5 }],
+      }),
+    )
+    expect(unmarkableExits(level).map((c) => `${c.x},${c.z}`)).toEqual(['2,2'])
+  })
+
+  it('is happy with an exit in an alcove', () => {
+    const level = parseLevel(
+      withGrid(['#####', '#...#', '#.#.#', '#.X.#', '#####'], {
+        entities: [{ type: 'player', x: 1.5, z: 1.5 }],
+      }),
+    )
+    expect(unmarkableExits(level)).toEqual([])
+  })
+
+  it('needs only one wall, not four', () => {
+    const level = parseLevel(
+      withGrid(['#####', '#.#.#', '#.X.#', '#...#', '#####'], {
+        entities: [{ type: 'player', x: 1.5, z: 1.5 }],
+      }),
+    )
+    expect(unmarkableExits(level)).toEqual([])
+  })
+})
+
 describe('shipped levels', () => {
   // Every level file must parse. Cheap, and it catches typos in a hand-edited
   // ASCII grid the moment they are introduced rather than at play time.
@@ -304,6 +336,17 @@ describe('shipped levels', () => {
       expect(
         touching.map((c) => `${c.x},${c.z}`),
         'door or secret cells sharing an edge',
+      ).toEqual([])
+    },
+  )
+
+  it.each(levels.map((l) => [l.id, l] as const))(
+    '%s gives every exit a wall to sign',
+    (_id, src) => {
+      const unmarked = unmarkableExits(parseLevel(src))
+      expect(
+        unmarked.map((c) => `${c.x},${c.z}`),
+        'exits with no wall to sign',
       ).toEqual([])
     },
   )
