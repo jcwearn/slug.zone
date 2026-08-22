@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { hasLineOfSight } from '../engine/collision.ts'
 import { parseLevel } from '../world/level.ts'
 import { worldSpace } from '../world/space.ts'
-import { burstDamage, enemyCylinder, spawnEnemy, targetable, updateEnemy } from './enemy.ts'
+import {
+  armourScale,
+  burstDamage,
+  enemyCylinder,
+  spawnEnemy,
+  targetable,
+  updateEnemy,
+} from './enemy.ts'
 import { damage, isAlive } from './fsm.ts'
 import { ENEMIES } from './definitions.ts'
 import { nearestHit, verticalAutoAim } from './hitscan.ts'
@@ -229,5 +236,72 @@ describe('death burst', () => {
     // Diagonal distance, so a burst cannot be a square dressed up as a circle.
     const diagonal = burstDamage(freshlyDead(), 5 + 1.8, 5 + 1.8)
     expect(diagonal, 'a corner 2.55 away is outside a 2.5 radius').toBe(0)
+  })
+})
+
+describe('directional armour', () => {
+  const shellback = ENEMIES.shellback
+
+  /** A Shellback at the origin, facing whichever way is asked for. */
+  const looking = (yaw: number) => {
+    const enemy = spawnEnemy('shellback', 5, 5)
+    enemy.facing = yaw
+    return enemy
+  }
+
+  /** Yaw that looks toward (dx, dz). Forward is (-sin yaw, -cos yaw). */
+  const toward = (dx: number, dz: number) => Math.atan2(-dx, -dz)
+
+  it('lets everything through for a slug with no plating', () => {
+    expect(armourScale(spawnEnemy('grub', 5, 5), 9, 5)).toBe(1)
+    expect(ENEMIES.grub.armour).toBeNull()
+  })
+
+  it('soaks a shot taken head-on', () => {
+    // Looking east, shot from the east.
+    expect(armourScale(looking(toward(1, 0)), 9, 5)).toBe(shellback.armour!.multiplier)
+  })
+
+  it('lets a shot from behind through in full', () => {
+    expect(armourScale(looking(toward(1, 0)), 1, 5)).toBe(1)
+  })
+
+  it('protects the side it is looking at, whichever way that is', () => {
+    // The plating and the sight cone face the same way on purpose: its blind
+    // spot and its soft spot are the same place, so one move solves both.
+    for (const [dx, dz] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const enemy = looking(toward(dx, dz))
+      const front = armourScale(enemy, 5 + dx * 4, 5 + dz * 4)
+      const back = armourScale(enemy, 5 - dx * 4, 5 - dz * 4)
+      expect(front, `facing ${dx},${dz} from the front`).toBeLessThan(1)
+      expect(back, `facing ${dx},${dz} from behind`).toBe(1)
+    }
+  })
+
+  it('turns over at the edge of its own arc', () => {
+    const enemy = looking(0) // looking toward -z
+    const arc = shellback.armour!.arc
+    const at = (angle: number) =>
+      armourScale(enemy, 5 - Math.sin(angle) * 4, 5 - Math.cos(angle) * 4)
+
+    expect(at(arc - 0.05), 'just inside the plating').toBeLessThan(1)
+    expect(at(arc + 0.05), 'just outside it').toBe(1)
+  })
+
+  it('gives a wide enough arc that walking round it is the answer', () => {
+    // A narrow arc makes strafing a few degrees the answer and the creature
+    // stops asking anything of the player.
+    expect(shellback.armour!.arc).toBeGreaterThan(1)
+    expect(shellback.armour!.multiplier).toBeLessThan(0.25)
+  })
+
+  it('does not depend on how far away the shooter is', () => {
+    const enemy = looking(toward(1, 0))
+    expect(armourScale(enemy, 5.5, 5)).toBe(armourScale(enemy, 25, 5))
   })
 })

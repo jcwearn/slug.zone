@@ -34,6 +34,21 @@ export interface EnemyDef {
   color: number
   darkColor: number
   /**
+   * Which body the renderer builds. Colour and scale alone make a recoloured
+   * Grub, not a new creature.
+   */
+  shape: 'slug' | 'bloat' | 'brute' | 'shell'
+  /**
+   * Armour that only covers one side, or null for a soft-all-over slug.
+   *
+   * `arc` is the half-angle around its facing that the plating covers, and
+   * `multiplier` is what a hit inside it is scaled by. This is the one thing
+   * in the roster that asks the player to move rather than to aim, so the arc
+   * is wide enough that walking around it is the answer rather than strafing
+   * a few degrees and carrying on.
+   */
+  armour: { arc: number; multiplier: number } | null
+  /**
    * Backs away when the player gets nearer than this, in grid units. 0 for an
    * enemy that always closes.
    *
