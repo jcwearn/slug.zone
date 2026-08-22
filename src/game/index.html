@@ -6,11 +6,28 @@
     <meta name="description" content="Salt Shaker — a slug-infested retro shooter" />
     <title>Slug Zone // Salt Shaker</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./game.css" />
   </head>
 
   <body>
     <canvas id="viewport"></canvas>
+
+    <!--
+      The gate is a requirement, not a splash screen: requestPointerLock and
+      AudioContext both refuse without a user gesture, so this click is what
+      unlocks look controls now and sound later.
+    -->
+    <div id="gate">
+      <p class="title">SALT SHAKER</p>
+      <p class="hint">CLICK TO PLAY</p>
+      <p class="keys">WASD MOVE &middot; MOUSE LOOK &middot; SHIFT RUN &middot; ESC RELEASE</p>
+    </div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
