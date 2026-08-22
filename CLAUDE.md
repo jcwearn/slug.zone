@@ -58,6 +58,24 @@ punched in it, and the corners must actually be cleared — because fixing one o
 those is how the other got broken. The private reference photo is not in this
 repo and must stay out; only the generated sheet is committed.
 
+**Door state lives on the `Cell`, not on `cell.door`.** `parseLevel` copies the
+legend spec shallowly, so every `D` cell would otherwise share one object -- the
+one the level module exports, and the one every other parse gets. `world/doors.ts`
+is the only module that writes `cell.open`; everything that collides, raycasts or
+checks line of sight reads it through `isSolid`, which is why it is there rather
+than threaded through ten signatures.
+
+**`geometry.ts` culls faces against `opaque`, never `isSolid`.** A door is solid
+to collision but a portal to geometry -- its leaf is a separate mesh that rises
+away. Culling against `isSolid` left the jambs beside a doorway with no face and
+the door cell with no floor, so opening a door revealed a hole through the wall.
+`geometry.test.ts` fails on both counts if that comes back.
+
+**Reachability is key-aware.** `reachableFromStart` is a fixed point over the
+keys the player can actually collect; one pass assumes you hold every card, so a
+key sealed inside the vault it opens ships as an unfinishable level. Secrets are
+impassable to it on purpose -- a secret must never be load-bearing.
+
 **Level geometry is data.** Levels are ASCII grids with a legend in
 `world/levels/`. `level.test.ts` asserts every shipped level parses, has a
 reachable exit, strands no walkable cells, and embeds no entity in a wall. Those
