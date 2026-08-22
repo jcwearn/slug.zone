@@ -244,6 +244,28 @@ function keyColourOf(item: string | undefined): string | null {
   return null
 }
 
+/**
+ * Exit cells with no solid neighbour to mount a marker on.
+ *
+ * The way out is signed by lit panels on the walls around it. An exit standing
+ * in open floor has no walls, so it shows nothing and the level ends when
+ * somebody wanders across the right square -- which is the state the marker
+ * was added to fix, and is a level-authoring mistake rather than a rendering
+ * one, which is why it is caught here.
+ */
+export function unmarkableExits(level: Level): Cell[] {
+  return level.cells
+    .filter((c) => c.exit)
+    .filter((c) =>
+      [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ].every(([dx, dz]) => !isSolid(level, c.x + dx, c.z + dz)),
+    )
+}
+
 /** Cells the player can never get to. An empty result is the healthy case. */
 export function unreachableWalkableCells(level: Level): Cell[] {
   const seen = reachableFromStart(level)
