@@ -96,10 +96,22 @@ button at a game that was a spinning cube would have advertised something that
 did not exist. It is still worth doing, or worth dropping in favour of going
 straight to the DNS cutover.
 
-**G5 was pulled ahead of G4.** Player health turns the game from a shooting
-gallery into a fight, and the HUD it needs also fixes ammo being invisible --
-both were blocking playtesting in a way more enemy types were not. G5's pickups
-half is still outstanding.
+**G5 was pulled ahead of G4, and shipped in two halves.** Player health turns
+the game from a shooting gallery into a fight, and the HUD it needs also fixes
+ammo being invisible -- both were blocking playtesting in a way more enemy types
+were not. The second half (pickups, keys, doors, secrets, the exit) followed.
+
+**Secret walls lift rather than sliding.** The plan implied Wolf3D push-walls.
+E1M1's secret has open floor on BOTH sides, so a push-wall would slide into a
+walkable cell and stand there as an unexplained free-floating block -- in a cell
+whose neighbours were never given faces. Lifting reuses the door state machine
+exactly and needs no destination cell. A sideways slide is still a one-line
+change in `doorview.ts` if a later level wants one, but it would need a new
+level invariant that the far cell is solid.
+
+**The exit loops back to E1M1 rather than advancing.** E1M2-E1M5 do not exist
+yet, so the tally screen replays the level. `session.ts` holds nothing that
+assumes one level; a level registry is what G6 adds.
 
 **The HUD portrait is a committed sprite sheet, not procedural art.** The plan
 said the face would be "procedurally-drawn". Three attempts at a hand-drawn
