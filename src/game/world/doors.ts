@@ -94,21 +94,29 @@ export interface UseResult {
 }
 
 /**
- * Try to open whatever is at (x, z).
+ * What pressing use at (x, z) would do, without doing it.
  *
- * `locked` and `none` are deliberately different answers: one deserves a
- * thud and a message naming the key, the other deserves silence. A wall that
- * grunts at you every time you press the use key is worse than one that does
- * nothing.
+ * Split out so the on-screen prompt and the use key cannot disagree about
+ * whether a door will open. Asking the same function is the only way to be
+ * sure the hint is telling the truth.
+ *
+ * `locked` and `none` are deliberately different answers: one deserves a thud
+ * and a message naming the key, the other deserves silence. A wall that grunts
+ * at you every time you press the use key is worse than one that does nothing.
  */
-export function tryOpen(doors: Door[], x: number, z: number, keys: ReadonlySet<string>): UseResult {
+export function peekUse(doors: Door[], x: number, z: number, keys: ReadonlySet<string>): UseResult {
   const door = doorAt(doors, x, z)
   if (!door) return { outcome: 'none' }
   if (door.phase !== 'closed') return { outcome: 'already', door }
   if (door.key !== null && !keys.has(door.key)) return { outcome: 'locked', door }
-
-  door.phase = 'opening'
   return { outcome: 'opened', door }
+}
+
+/** Open whatever is at (x, z), if `peekUse` says it can be opened. */
+export function tryOpen(doors: Door[], x: number, z: number, keys: ReadonlySet<string>): UseResult {
+  const result = peekUse(doors, x, z, keys)
+  if (result.outcome === 'opened' && result.door) result.door.phase = 'opening'
+  return result
 }
 
 /**
@@ -170,4 +178,41 @@ export function useTarget(
   const hit = raycast(level, x, z, dir.x, dir.z, USE_RANGE)
   if (!hit) return null
   return { x: hit.cellX, z: hit.cellZ }
+}
+
+/**
+ * What to tell the player about the thing they are standing in front of.
+ *
+ * `none` covers three different situations that all deserve the same silence:
+ * there is nothing in reach, it is an ordinary wall, or it is a door already
+ * open.
+ *
+ * A closed SECRET also returns `none`, and that is the whole point of it. A
+ * prompt would turn every secret in the game into a signpost -- the reward for
+ * finding one is finding it, and a wall that announces itself has already been
+ * found for you. Secrets are meant to be discovered by pressing use on
+ * ordinary-looking walls, which costs nothing and is exactly how Doom taught
+ * people to look for them.
+ */
+export type UseHint = { kind: 'none' } | { kind: 'open' } | { kind: 'locked'; key: string }
+
+export function useHint(
+  level: Level,
+  doors: Door[],
+  x: number,
+  z: number,
+  yaw: number,
+  keys: ReadonlySet<string>,
+): UseHint {
+  const target = useTarget(level, x, z, yaw)
+  if (!target) return { kind: 'none' }
+
+  const result = peekUse(doors, target.x, target.z, keys)
+  if (result.door?.secret) return { kind: 'none' }
+
+  if (result.outcome === 'opened') return { kind: 'open' }
+  if (result.outcome === 'locked' && result.door?.key) {
+    return { kind: 'locked', key: result.door.key }
+  }
+  return { kind: 'none' }
 }

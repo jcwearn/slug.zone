@@ -14,7 +14,7 @@ import type { Expression } from './ui/face.ts'
 import { collect, createPickups, pickupsTouching, resetPickups } from './pickups/pickups.ts'
 import { buildPickupView, posePickup } from './pickups/render.ts'
 import { LIME } from './data/palette.ts'
-import { buildDoors, resetDoors, tickDoors, tryOpen, useTarget } from './world/doors.ts'
+import { buildDoors, resetDoors, tickDoors, tryOpen, useHint, useTarget } from './world/doors.ts'
 import { DoorViews } from './world/doorview.ts'
 import { atExit, createSession, finishLevel, tickRun } from './session.ts'
 import { createTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
@@ -179,6 +179,24 @@ let noticeTimer = 0
 function say(text: string, colour: string): void {
   notice = { text, colour }
   noticeTimer = NOTICE_TIME
+}
+
+/**
+ * The line under the crosshair telling you what use would do right now.
+ *
+ * Recomputed every frame from the same `peekUse` the use key itself calls, so
+ * the hint cannot promise a door the key would refuse to open. It costs one
+ * short DDA raycast, and the band only repaints when the text changes.
+ *
+ * A closed secret deliberately shows nothing -- `useHint` is where that lives.
+ */
+function promptNow(): Notice {
+  const hint = useHint(level, doors, player.x, player.z, player.yaw, keys)
+  if (hint.kind === 'open') return { text: 'PRESS E TO OPEN', colour: LIME_TEXT }
+  if (hint.kind === 'locked') {
+    return { text: `${hint.key.toUpperCase()} KEYCARD REQUIRED`, colour: LOCKED_TEXT }
+  }
+  return { text: '', colour: '' }
 }
 
 const input = new Input(canvas, () => {
@@ -559,7 +577,7 @@ new Loop({
     snarlTimer = Math.max(0, snarlTimer - dt)
     noticeTimer = Math.max(0, noticeTimer - dt)
     if (noticeTimer === 0 && notice.text !== '') notice = { text: '', colour: '' }
-    screen.update(health, arsenal, keys, expressionNow(), notice)
+    screen.update(health, arsenal, keys, expressionNow(), notice, promptNow())
     previousYaw = player.yaw
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)

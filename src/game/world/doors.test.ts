@@ -8,6 +8,7 @@ import {
   tickDoors,
   tryOpen,
   USE_RANGE,
+  useHint,
   useTarget,
 } from './doors.ts'
 import { isSolid, parseLevel, type Level } from './level.ts'
@@ -303,5 +304,76 @@ describe('e1m1', () => {
     expect(walkable.length - shut, 'cells that were unreachable with doors shut').toBeGreaterThan(
       40,
     )
+  })
+})
+
+describe('useHint', () => {
+  const level = parseLevel(base)
+  const doors = buildDoors(level)
+  /** Yaw that faces (dx, dz). Forward is (-sin yaw, -cos yaw). */
+  const facing = (dx: number, dz: number) => Math.atan2(-dx, -dz)
+
+  it('offers to open a plain door', () => {
+    expect(useHint(level, doors, 1.5, 1.5, facing(1, 0), new Set())).toEqual({ kind: 'open' })
+  })
+
+  it('names the card a locked door wants', () => {
+    expect(useHint(level, doors, 1.5, 2.5, facing(1, 0), new Set())).toEqual({
+      kind: 'locked',
+      key: 'red',
+    })
+  })
+
+  it('offers to open that same door once the card is held', () => {
+    expect(useHint(level, doors, 1.5, 2.5, facing(1, 0), new Set(['red']))).toEqual({
+      kind: 'open',
+    })
+  })
+
+  it('says nothing about a closed secret', () => {
+    // The whole point of one. A prompt turns every secret in the game into a
+    // signpost, and the reward for finding a secret is finding it.
+    expect(useHint(level, doors, 1.5, 3.5, facing(1, 0), new Set())).toEqual({ kind: 'none' })
+  })
+
+  it('says nothing about a plain wall', () => {
+    expect(useHint(level, doors, 1.5, 1.5, facing(-1, 0), new Set())).toEqual({ kind: 'none' })
+  })
+
+  it('says nothing about a door out of reach', () => {
+    // Two cells down column 1 is floor, then wall -- nothing usable in range.
+    expect(useHint(level, doors, 1.5, 1.5, facing(0, 1), new Set())).toEqual({ kind: 'none' })
+  })
+
+  it('says nothing once the door has been opened', () => {
+    const own = parseLevel(base)
+    const ownDoors = buildDoors(own)
+    expect(useHint(own, ownDoors, 1.5, 1.5, facing(1, 0), new Set())).toEqual({ kind: 'open' })
+    tryOpen(ownDoors, 2, 1, new Set())
+    openFully(own, ownDoors)
+    expect(useHint(own, ownDoors, 1.5, 1.5, facing(1, 0), new Set())).toEqual({ kind: 'none' })
+  })
+
+  it('agrees with what the use key actually does', () => {
+    // The hint and the action must never disagree, which is why both go
+    // through peekUse. Swept across every cell and both facings on the door
+    // column, so no position can promise something use would refuse.
+    const held = new Set(['red'])
+    for (const z of [1, 2, 3]) {
+      for (const [from, dir] of [
+        [1.5, 1],
+        [3.5, -1],
+      ] as const) {
+        const fresh = parseLevel(base)
+        const freshDoors = buildDoors(fresh)
+        const yaw = facing(dir, 0)
+        const hint = useHint(fresh, freshDoors, from, z + 0.5, yaw, held)
+        const target = useTarget(fresh, from, z + 0.5, yaw)
+        const acted = target ? tryOpen(freshDoors, target.x, target.z, held).outcome : 'none'
+
+        if (hint.kind === 'open') expect(acted, `z=${z} from x=${from}`).toBe('opened')
+        if (hint.kind === 'locked') expect(acted, `z=${z} from x=${from}`).toBe('locked')
+      }
+    }
   })
 })

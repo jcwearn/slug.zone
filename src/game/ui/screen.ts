@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { Hud } from './hud.ts'
-import { MessageLine } from './message.ts'
+import { MessageLine, PROMPT_Y } from './message.ts'
 import { Intermission } from './intermission.ts'
 import type { Tally } from './tally.ts'
 import type { PlayerHealth } from '../player/health.ts'
@@ -25,6 +25,7 @@ export class ScreenLayer {
 
   private readonly hud = new Hud()
   private readonly message = new MessageLine()
+  private readonly prompt = new MessageLine(PROMPT_Y)
   private readonly intermission = new Intermission()
   private readonly flash: THREE.Mesh
   private readonly flashMaterial: THREE.MeshBasicMaterial
@@ -32,6 +33,7 @@ export class ScreenLayer {
   constructor() {
     this.scene.add(this.hud.mesh)
     this.scene.add(this.message.mesh)
+    this.scene.add(this.prompt.mesh)
     this.scene.add(this.intermission.mesh)
 
     // Full-screen red wash, additive so it tints rather than covers -- an
@@ -57,9 +59,11 @@ export class ScreenLayer {
     keys: Set<string>,
     expression: Expression = 'neutral',
     notice: Notice = { text: '', colour: '' },
+    prompt: Notice = { text: '', colour: '' },
   ): void {
     this.hud.update(health, arsenal, keys, expression)
     this.message.update(notice.text, notice.colour)
+    this.prompt.update(prompt.text, prompt.colour)
     // Capped well below 1: the flash should read as being hit, not as a
     // screen transition.
     this.flashMaterial.opacity = Math.min(0.55, health.painFlash * 0.55)
@@ -78,6 +82,7 @@ export class ScreenLayer {
   dispose(): void {
     this.hud.dispose()
     this.message.dispose()
+    this.prompt.dispose()
     this.intermission.dispose()
     this.flash.geometry.dispose()
     this.flashMaterial.dispose()
