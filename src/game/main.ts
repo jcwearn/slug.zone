@@ -1,89 +1,70 @@
 import * as THREE from 'three'
 import { RetroRenderer } from './engine/renderer.ts'
 import { Loop } from './engine/loop.ts'
-import { Input, moveVector } from './engine/input.ts'
-import { clamp } from './engine/math.ts'
-import { LIME, SLUG_BROWN, WALL_BRICK, FLOOR_DAMP } from './data/palette.ts'
+import { Input } from './engine/input.ts'
+import { parseLevel } from './world/level.ts'
+import { buildLevelMeshes } from './world/geometry.ts'
+import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
+import { SLUG_BROWN, SLUG_DARK } from './data/palette.ts'
+import e1m1 from './world/levels/e1m1.ts'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#viewport')
 if (!canvas) throw new Error('#viewport canvas missing')
 
+const level = parseLevel(e1m1)
 const view = new RetroRenderer(canvas)
 const overlay = document.querySelector<HTMLElement>('#gate')
+const s = level.cellSize
 
-// Fog in the site's lime, which is what gives the scene its depth cueing --
-// and, not incidentally, hides the far clip plane the way Doom's did.
-view.scene.fog = new THREE.Fog(0x0a1405, 4, 44)
+// Fog doubles as the far clip: it reaches full density before the camera's
+// far plane, so the level ends in darkness rather than in a visible edge.
+view.scene.fog = new THREE.FogExp2(0x0a1405, level.fog)
 view.scene.background = new THREE.Color(0x0a1405)
+view.scene.add(new THREE.AmbientLight(0xffffff, 0.75))
 
-view.scene.add(new THREE.AmbientLight(0xffffff, 0.55))
-const lamp = new THREE.PointLight(LIME, 40, 60)
-lamp.position.set(0, 3, 0)
-view.scene.add(lamp)
+// A light on the camera, Doom-style: the world has no light sources of its
+// own, so what you can see is what you are near.
+const lantern = new THREE.PointLight(0xbfe08a, 60, 22, 1.6)
+view.scene.add(lantern)
 
-// A placeholder room. Real geometry arrives with the level format; this exists
-// so movement, collision-free walking, and the upscale can all be judged
-// against something with edges and a floor.
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(40, 40),
-  new THREE.MeshLambertMaterial({ color: FLOOR_DAMP }),
-)
-floor.rotation.x = -Math.PI / 2
-view.scene.add(floor)
+const meshes = buildLevelMeshes(level)
+view.scene.add(meshes.group)
 
-const pillarGeo = new THREE.BoxGeometry(2, 5, 2)
-const pillarMat = new THREE.MeshLambertMaterial({ color: WALL_BRICK })
-for (let i = 0; i < 8; i++) {
-  const a = (i / 8) * Math.PI * 2
-  const pillar = new THREE.Mesh(pillarGeo, pillarMat)
-  pillar.position.set(Math.cos(a) * 12, 2.5, Math.sin(a) * 12)
-  view.scene.add(pillar)
+// Placeholder enemy markers until the real creatures land. Positioned from the
+// level's own entity list so the map data is already driving them.
+const markerGeo = new THREE.IcosahedronGeometry(0.5, 0)
+for (const entity of level.entities) {
+  const isPickup = entity.type === 'pickup'
+  const marker = new THREE.Mesh(
+    markerGeo,
+    new THREE.MeshLambertMaterial({
+      color: isPickup ? 0x54e508 : SLUG_BROWN,
+      emissive: isPickup ? 0x143a02 : SLUG_DARK,
+      flatShading: true,
+    }),
+  )
+  marker.position.set(entity.x * s, isPickup ? 0.6 * s * 0.5 : 0.5 * s * 0.5, entity.z * s)
+  marker.scale.setScalar(isPickup ? s * 0.18 : s * 0.3)
+  view.scene.add(marker)
 }
 
-const blob = new THREE.Mesh(
-  new THREE.IcosahedronGeometry(1, 1),
-  new THREE.MeshLambertMaterial({ color: SLUG_BROWN, flatShading: true }),
-)
-blob.position.set(0, 1.2, -6)
-view.scene.add(blob)
-
-const player = { x: 0, y: 1.6, z: 6, yaw: 0, pitch: 0 }
-let elapsed = 0
-const SPEED = 6
-const RUN_MULTIPLIER = 1.7
-
+const player = createPlayer(level)
 const input = new Input(canvas, () => overlay?.classList.add('hidden'))
 
-const loop = new Loop({
+new Loop({
   update(dt) {
     if (!input.isEngaged) {
       overlay?.classList.remove('hidden')
       return
     }
-
-    const look = input.consumeLook()
-    player.yaw += look.yaw
-    // Clamped just shy of straight up/down. At exactly +/-PI/2 the camera
-    // basis degenerates and the view rolls.
-    player.pitch = clamp(player.pitch + look.pitch, -1.5, 1.5)
-
-    const move = moveVector((a) => input.isDown(a))
-    const speed = SPEED * (input.isDown('run') ? RUN_MULTIPLIER : 1) * dt
-    const sin = Math.sin(player.yaw)
-    const cos = Math.cos(player.yaw)
-    player.x += (move.x * cos - move.z * sin) * speed
-    player.z += (move.x * sin + move.z * cos) * speed
-
-    elapsed += dt
-    blob.rotation.y += dt * 0.8
-    blob.position.y = 1.2 + Math.sin(elapsed * 1.6) * 0.15
+    updatePlayer(player, level, input, dt)
   },
 
   render() {
-    view.camera.position.set(player.x, player.y, player.z)
+    const eyeY = (EYE_HEIGHT + player.eyeOffset) * level.wallHeight
+    view.camera.position.set(player.x * s, eyeY, player.z * s)
     view.camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ')
+    lantern.position.copy(view.camera.position)
     view.render()
   },
-})
-
-loop.start()
+}).start()
