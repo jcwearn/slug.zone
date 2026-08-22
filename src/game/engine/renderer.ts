@@ -66,9 +66,26 @@ export class RetroRenderer {
     this.renderer.setSize(width, height, false)
   }
 
-  render() {
+  /**
+   * Render the world, then any overlay, then blit.
+   *
+   * The overlay (the weapon in your hands) draws into the SAME render target
+   * with the depth buffer cleared first, so it is pixelated identically to the
+   * world but cannot be occluded by it. Rendering it after the blit instead
+   * would leave it at full screen resolution -- a crisp weapon in front of a
+   * 320x200 world, which looks exactly as wrong as it sounds.
+   */
+  render(overlay?: { scene: THREE.Scene; camera: THREE.Camera }) {
     this.renderer.setRenderTarget(this.target)
     this.renderer.render(this.scene, this.camera)
+
+    if (overlay) {
+      this.renderer.autoClear = false
+      this.renderer.clearDepth()
+      this.renderer.render(overlay.scene, overlay.camera)
+      this.renderer.autoClear = true
+    }
+
     this.renderer.setRenderTarget(null)
     this.renderer.render(this.blitScene, this.blitCamera)
   }
