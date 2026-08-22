@@ -75,7 +75,10 @@ export class RetroRenderer {
    * would leave it at full screen resolution -- a crisp weapon in front of a
    * 320x200 world, which looks exactly as wrong as it sounds.
    */
-  render(overlay?: { scene: THREE.Scene; camera: THREE.Camera }) {
+  render(
+    overlay?: { scene: THREE.Scene; camera: THREE.Camera },
+    screen?: { scene: THREE.Scene; camera: THREE.Camera },
+  ) {
     this.renderer.setRenderTarget(this.target)
     this.renderer.render(this.scene, this.camera)
 
@@ -83,6 +86,17 @@ export class RetroRenderer {
       this.renderer.autoClear = false
       this.renderer.clearDepth()
       this.renderer.render(overlay.scene, overlay.camera)
+      this.renderer.autoClear = true
+    }
+
+    // Screen-space layer -- HUD, damage flash -- last and still inside the
+    // render target, so it is pixelated with everything else. Its camera is
+    // orthographic over 0..1 rather than perspective, because a status bar has
+    // no business having a vanishing point.
+    if (screen) {
+      this.renderer.autoClear = false
+      this.renderer.clearDepth()
+      this.renderer.render(screen.scene, screen.camera)
       this.renderer.autoClear = true
     }
 

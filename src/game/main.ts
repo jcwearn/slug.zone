@@ -8,6 +8,9 @@ import { parseLevel } from './world/level.ts'
 import { worldSpace } from './world/space.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
+import { createHealth, damagePlayer, tickHealth } from './player/health.ts'
+import { ScreenLayer } from './ui/screen.ts'
+import type { Expression } from './ui/face.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
   enemyCylinder,
@@ -20,6 +23,8 @@ import {
 import { buildEnemyView, poseEnemy, type EnemyView } from './enemies/render.ts'
 import { damage as damageEnemy, isAlive } from './enemies/fsm.ts'
 import { nearestHit, verticalAutoAim } from './enemies/hitscan.ts'
+import { Globs } from './enemies/projectiles.ts'
+import { GlobRenderer } from './enemies/globrender.ts'
 import {
   addAmmo,
   createArsenal,
@@ -40,7 +45,11 @@ import {
   playSquelch,
   playGrinderBlast,
   playImpact,
+  playDeath,
+  playHurt,
   playSaltBlast,
+  playSplat,
+  playSpit,
   playSwitch,
   unlockAudio,
 } from './audio/sfx.ts'
@@ -69,6 +78,10 @@ view.scene.add(meshes.group)
 const tracers = new Tracers()
 view.scene.add(tracers.mesh)
 
+const globs = new Globs()
+const globRenderer = new GlobRenderer(globs.items.length)
+view.scene.add(globRenderer.mesh)
+
 // Pickups are still inert markers; they become real in G5.
 const markerGeo = new THREE.IcosahedronGeometry(0.5, 0)
 const markerMat = new THREE.MeshLambertMaterial({
@@ -88,6 +101,9 @@ interface Live {
   view: EnemyView
   /** Whether it had noticed the player last tick, for the alert sound. */
   wasIdle: boolean
+  /** Where it started, so a restart can put it back. */
+  spawnX: number
+  spawnZ: number
 }
 
 const live: Live[] = []
@@ -96,11 +112,34 @@ for (const entity of level.entities) {
   const enemy = spawnEnemy(entity.type, entity.x, entity.z)
   const enemyView = buildEnemyView(enemy.def)
   view.scene.add(enemyView.group)
-  live.push({ enemy, view: enemyView, wasIdle: true })
+  live.push({ enemy, view: enemyView, wasIdle: true, spawnX: entity.x, spawnZ: entity.z })
 }
 
 const player = createPlayer(level)
+const health = createHealth()
 const arsenal = createArsenal()
+const screen = new ScreenLayer()
+const keys = new Set<string>()
+
+/**
+ * Which portrait frame to show.
+ *
+ * Ordered by urgency: pain beats everything, then firing, then which way you
+ * are turning. The look frames key off actual yaw change rather than which
+ * key is held, so turning with the mouse counts too -- and the threshold stops
+ * the face flickering on tiny mouse jitter while you stand still.
+ */
+let snarlTimer = 0
+let previousYaw = player.yaw
+
+function expressionNow(): Expression {
+  if (health.painFlash > 0.25) return 'hurt'
+  if (snarlTimer > 0) return 'snarl'
+  const turn = player.yaw - previousYaw
+  if (turn > 0.02) return 'left'
+  if (turn < -0.02) return 'right'
+  return 'neutral'
+}
 const viewmodel = new Viewmodel()
 
 // Both weapons from the start while there is nothing to pick them up from.
@@ -112,6 +151,35 @@ const input = new Input(canvas, () => {
   overlay?.classList.add('hidden')
   unlockAudio()
 })
+
+const deathScreen = document.querySelector<HTMLElement>('#dead')
+
+/**
+ * Put everything back for another go.
+ *
+ * A full reset rather than a page reload: reloading rebuilds the level meshes
+ * and regenerates every texture, which is a visible pause for something that
+ * should be instant.
+ */
+function restart(): void {
+  const fresh = createPlayer(level)
+  Object.assign(player, fresh)
+
+  Object.assign(health, createHealth())
+
+  for (const entry of live) {
+    const spawn = level.entities.find(
+      (e) => e.type === entry.enemy.def.id && e.x === entry.spawnX && e.z === entry.spawnZ,
+    )
+    entry.enemy = spawnEnemy(entry.enemy.def.id, entry.spawnX, entry.spawnZ)
+    entry.wasIdle = true
+    void spawn
+  }
+
+  globs.clear()
+  keys.clear()
+  deathScreen?.classList.add('hidden')
+}
 
 let lastPhase = arsenal.phase
 
@@ -225,6 +293,20 @@ new Loop({
       return
     }
 
+    if (health.dead) {
+      deathScreen?.classList.remove('hidden')
+      // Fire restarts. The button is already down from whatever killed you, so
+      // it has to be released first or the click that killed you also skips
+      // the death screen.
+      if (input.isDown('fire')) {
+        input.releaseFire()
+        restart()
+      }
+      tickHealth(health, dt)
+      screen.update(health, arsenal, keys)
+      return
+    }
+
     const before = { x: player.x, z: player.z }
     // Live slugs only -- corpses are scenery you walk over.
     const blockers: Disc[] = targetable(live.map((l) => l.enemy)).map((e) => ({
@@ -244,6 +326,7 @@ new Loop({
       if (result.fired) {
         for (const angle of result.angles!) shootPellet(angle)
         viewmodel.onFire()
+        snarlTimer = 0.35
         if (result.def!.id === 'grinder') playGrinderBlast(rng())
         else playSaltBlast(rng())
         // Semi-automatic: drop the held flag so the shot needs a fresh click.
@@ -259,6 +342,34 @@ new Loop({
       const nowIdle = entry.enemy.mind.state === 'idle'
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
+
+      // The strike lands at the end of the wind-up, and only if the player is
+      // still in range -- the FSM already decided that.
+      if (entry.enemy.mind.didStrike) {
+        const ranged = entry.enemy.def.projectile
+        if (ranged) {
+          // Launched from the creature's own height toward the player's chest,
+          // so the arc is visible against the floor rather than skimming it.
+          const glob = globs.spawn(
+            entry.enemy.x,
+            entry.enemy.z,
+            entry.enemy.def.height * level.wallHeight * 0.8,
+            player.x,
+            player.z,
+            space.eyeY(EYE_HEIGHT) - 0.35,
+            ranged.speed,
+            entry.enemy.def.damage,
+          )
+          if (glob) {
+            glob.radius = ranged.radius
+            playSpit(rng())
+          }
+        } else {
+          const result = damagePlayer(health, entry.enemy.def.damage)
+          if (result.died) playDeath()
+          else if (result.applied) playHurt(rng())
+        }
+      }
     }
 
     // After everyone has moved, so the push resolves the positions they
@@ -268,14 +379,44 @@ new Loop({
       level,
     )
 
+    for (const outcome of globs.step(
+      level,
+      dt,
+      player.x,
+      player.z,
+      PLAYER_RADIUS,
+      level.wallHeight,
+      space.floorY,
+      // A little above the eye, so a glob aimed at your face connects rather
+      // than clipping past the top of the hitbox.
+      space.eyeY(EYE_HEIGHT + player.eyeOffset) + 0.25,
+    )) {
+      const worldX = outcome.kind === 'none' ? 0 : outcome.x * s
+      const worldZ = outcome.kind === 'none' ? 0 : outcome.z * s
+      if (outcome.kind === 'hit') {
+        const result = damagePlayer(health, outcome.damage)
+        if (result.died) playDeath()
+        else if (result.applied) playHurt(rng())
+        tracers.emitImpact(worldX, outcome.worldY, worldZ, 0, 0, rng)
+      } else if (outcome.kind === 'wall' || outcome.kind === 'expired') {
+        tracers.emitImpact(worldX, outcome.worldY, worldZ, 0, 0, rng)
+        playSplat()
+      }
+    }
+
     tickArsenal(arsenal, dt)
     if (lastPhase === 'lowering' && arsenal.phase === 'raising') playSwitch()
     lastPhase = arsenal.phase
 
     for (const entry of live) poseEnemy(entry.view, entry.enemy, s, level.wallHeight, dt)
 
+    tickHealth(health, dt)
+    snarlTimer = Math.max(0, snarlTimer - dt)
+    screen.update(health, arsenal, keys, expressionNow())
+    previousYaw = player.yaw
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)
+    globRenderer.sync(globs, s)
   },
 
   render() {
@@ -283,6 +424,6 @@ new Loop({
     view.camera.position.set(player.x * s, eyeY, player.z * s)
     view.camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ')
     lantern.position.copy(view.camera.position)
-    view.render(viewmodel)
+    view.render(viewmodel, screen)
   },
 }).start()

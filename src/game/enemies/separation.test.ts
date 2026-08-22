@@ -3,7 +3,7 @@ import { separateEnemies, spawnEnemy, updateEnemy, type Enemy } from './enemy.ts
 import { damage } from './fsm.ts'
 import { parseLevel } from '../world/level.ts'
 import { isSolid } from '../world/level.ts'
-import { circleFits } from '../engine/collision.ts'
+import { circleFits, PLAYER_RADIUS } from '../engine/collision.ts'
 import e1m1 from '../world/levels/e1m1.ts'
 
 const level = parseLevel(e1m1)
@@ -81,6 +81,30 @@ describe('separateEnemies', () => {
         expect(circleFits(level, e.x, e.z, e.def.radius)).toBe(true)
       }
     }
+  })
+
+  it('does not shove a corpse the player walks into', () => {
+    // The player treats corpses as walk-through, but the enemy side pushed
+    // every slug out of the player regardless of whether it was alive -- so
+    // walking into a body slid it along the floor ahead of you.
+    const corpse = spawnEnemy('grub', 4.5, 1.5)
+    damage(corpse.mind, corpse.def, 999, () => 1)
+    const before = { x: corpse.x, z: corpse.z }
+
+    // Stand directly on it and keep walking.
+    for (let t = 0; t < 2; t += STEP) {
+      updateEnemy(corpse, level, 4.5, 1.5, STEP, PLAYER_RADIUS)
+    }
+    expect(corpse.x).toBe(before.x)
+    expect(corpse.z).toBe(before.z)
+  })
+
+  it('still pushes a LIVE slug out of the player', () => {
+    // The counterpart: without this the player ends up standing inside a slug
+    // with nothing to resolve it, because the player side only blocks.
+    const grub = spawnEnemy('grub', 4.5, 1.5)
+    updateEnemy(grub, level, 4.5, 1.5, STEP, PLAYER_RADIUS)
+    expect(Math.hypot(grub.x - 4.5, grub.z - 1.5)).toBeGreaterThan(0)
   })
 
   it('ignores corpses, so a dead slug does not block the living', () => {
