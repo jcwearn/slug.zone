@@ -64,6 +64,16 @@ export function shotEndpoint(
   floorY: number,
   ceilingY: number,
 ): ShotEnd {
+  // The eye must be inside the room. This is not defensive noise: X and Z are
+  // in world units (grid * cellSize) while Y is not, and mixing the two put the
+  // muzzle at 8.8 in a room 4 tall -- every tracer spawned above the ceiling and
+  // nothing was visible. A unit mismatch shows up here first and nowhere else.
+  if (eyeY < floorY || eyeY > ceilingY) {
+    throw new RangeError(
+      `eye at ${eyeY} is outside the room (${floorY}..${ceilingY}) -- check world vs grid units`,
+    )
+  }
+
   const cosPitch = Math.hypot(dir.x, dir.z)
 
   // Looking straight up or down: there is no horizontal component, so the wall

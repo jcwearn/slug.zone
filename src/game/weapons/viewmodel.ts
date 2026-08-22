@@ -45,18 +45,26 @@ export class Viewmodel {
     this.root.rotation.set(0, -0.22, 0.06)
     this.scene.add(this.root)
 
+    // Small, additive, and depth-written rather than forced on top.
+    //
+    // The first version was a 0.12 opaque cream quad with depthTest off --
+    // most of the weapon's own height -- so every shot painted a big pale
+    // diamond straight over the gun instead of flashing at its muzzle.
+    // Additive blending is what makes it read as light rather than a card.
     this.flash = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.12, 0.12),
+      new THREE.PlaneGeometry(0.05, 0.05),
       new THREE.MeshBasicMaterial({
-        color: 0xffffe0,
+        color: 0xfff4c0,
         transparent: true,
-        opacity: 0.95,
-        depthTest: false,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
       }),
     )
-    this.flash.position.set(0, 0.04, -0.16)
     this.flash.visible = false
-    this.root.add(this.flash)
+    // Parented to a weapon so it sits at that weapon's muzzle and rides the
+    // recoil, instead of floating in front of both.
+    this.shaker.add(this.flash)
 
     // Added to the scene, not to `root` -- the crosshair must stay dead centre
     // while the weapon sways, bobs and kicks around it.
@@ -64,7 +72,7 @@ export class Viewmodel {
   }
 
   onFire(): void {
-    this.flashTimer = 0.05
+    this.flashTimer = FLASH_TIME
     this.kick = 1
   }
 
@@ -75,10 +83,17 @@ export class Viewmodel {
     this.flashTimer = Math.max(0, this.flashTimer - dt)
     this.flash.visible = this.flashTimer > 0
     if (this.flash.visible) {
-      // Spin the flash a little each shot so repeated fire does not look like
-      // one static sprite blinking.
-      this.flash.rotation.z += dt * 30
-      this.flash.scale.setScalar(0.8 + Math.random() * 0.5)
+      // Follow whichever weapon is up, to that weapon's own muzzle.
+      const host = arsenal.current === 'grinder' ? this.grinder : this.shaker
+      if (this.flash.parent !== host) host.add(this.flash)
+      this.flash.position.copy(arsenal.current === 'grinder' ? GRINDER_MUZZLE : SHAKER_MUZZLE)
+
+      // Fade out across the flash's life rather than blinking off, and vary
+      // the size so repeated fire is not one sprite pulsing.
+      const t = this.flashTimer / FLASH_TIME
+      const mat = this.flash.material as THREE.MeshBasicMaterial
+      mat.opacity = 0.9 * t
+      this.flash.scale.setScalar(0.7 + (1 - t) * 0.6 + Math.random() * 0.25)
     }
 
     this.kick = Math.max(0, this.kick - dt * 9)
@@ -113,6 +128,11 @@ export class Viewmodel {
     })
   }
 }
+
+const FLASH_TIME = 0.06
+/** Muzzle points in each weapon group's own local space. */
+const SHAKER_MUZZLE = new THREE.Vector3(0, 0.14, 0)
+const GRINDER_MUZZLE = new THREE.Vector3(0, 0.16, 0)
 
 const metal = (color: number) => new THREE.MeshLambertMaterial({ color, flatShading: true })
 

@@ -13,8 +13,7 @@ import * as THREE from 'three'
  * are alive.
  */
 
-const MAX_GRAINS = 256
-const GRAIN_LIFETIME = 0.42
+const MAX_GRAINS = 512
 const PUFF_LIFETIME = 0.3
 
 interface Grain {
@@ -61,11 +60,17 @@ export class Tracers {
   }
 
   /**
-   * Emit a streak of grains along a shot, from muzzle to impact point.
+   * Spray grains from the muzzle toward the impact point.
    *
-   * The shot is hitscan -- the damage already happened -- so this is purely
-   * the visual, spread along the path so the eye reads a direction rather than
-   * a dot appearing at the far end.
+   * The shot itself is hitscan -- damage already happened -- but grains that
+   * simply appear along the line read as a flicker, not as salt leaving a
+   * shaker. So each grain is launched from the muzzle with a velocity that
+   * carries it most of the way there within its lifetime, with lateral jitter
+   * and a little gravity. The eye reads travel, which is the whole point.
+   *
+   * Sizes are in WORLD units, where a cell is `cellSize` across. The first
+   * version used 0.035, which is well under a pixel at any real distance --
+   * technically drawn, entirely invisible.
    */
   emitShot(
     fromX: number,
@@ -74,34 +79,73 @@ export class Tracers {
     toX: number,
     toY: number,
     toZ: number,
-    count = 5,
+    rng: () => number,
   ): void {
-    for (let i = 0; i < count; i++) {
-      const t = (i + 1) / (count + 1)
+    const dx = toX - fromX
+    const dy = toY - fromY
+    const dz = toZ - fromZ
+    const distance = Math.hypot(dx, dy, dz)
+    if (distance < 1e-6) return
+
+    const ux = dx / distance
+    const uy = dy / distance
+    const uz = dz / distance
+
+    // Perpendicular basis for the jitter, so scatter is across the shot rather
+    // than along it.
+    const px = -uz
+    const pz = ux
+    const TRAVEL = 0.11
+
+    for (let i = 0; i < 16; i++) {
+      // Grains fall short by varying amounts, which gives the spray a tail
+      // instead of a solid bar.
+      const reach = 0.45 + rng() * 0.55
+      const life = TRAVEL * (0.55 + rng() * 0.45)
+      const speed = (distance * reach) / TRAVEL
+
+      const spreadSide = (rng() - 0.5) * 0.09
+      const spreadUp = (rng() - 0.5) * 0.09
+
       this.spawn(
-        fromX + (toX - fromX) * t,
-        fromY + (toY - fromY) * t,
-        fromZ + (toZ - fromZ) * t,
-        0,
-        0,
-        0,
-        0.035,
-        GRAIN_LIFETIME * (0.3 + t * 0.7),
+        fromX + ux * 0.05,
+        fromY + uy * 0.05,
+        fromZ + uz * 0.05,
+        (ux + px * spreadSide) * speed,
+        (uy + spreadUp) * speed,
+        (uz + pz * spreadSide) * speed,
+        0.055 + rng() * 0.075,
+        life,
+      )
+    }
+
+    // A few grains that spill out of the shaker and drop, rather than being
+    // fired. Cheap, and it sells the object as a condiment.
+    for (let i = 0; i < 3; i++) {
+      this.spawn(
+        fromX,
+        fromY,
+        fromZ,
+        ux * (0.4 + rng()) + (rng() - 0.5) * 0.8,
+        0.4 + rng() * 0.6,
+        uz * (0.4 + rng()) + (rng() - 0.5) * 0.8,
+        0.05 + rng() * 0.04,
+        0.45,
       )
     }
   }
 
   /** Grains scattering off a surface. */
   emitImpact(x: number, y: number, z: number, nx: number, nz: number, rng: () => number): void {
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 10; i++) {
       this.spawn(
         x,
         y,
         z,
-        nx * (0.6 + rng() * 1.6) + (rng() - 0.5) * 1.2,
-        1.2 + rng() * 1.8,
-        nz * (0.6 + rng() * 1.6) + (rng() - 0.5) * 1.2,
-        0.03,
+        nx * (0.8 + rng() * 2.2) + (rng() - 0.5) * 1.6,
+        1.4 + rng() * 2.2,
+        nz * (0.8 + rng() * 2.2) + (rng() - 0.5) * 1.6,
+        0.05 + rng() * 0.05,
         PUFF_LIFETIME,
       )
     }

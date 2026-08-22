@@ -5,6 +5,7 @@ import { Input } from './engine/input.ts'
 import { mulberry32 } from './engine/math.ts'
 import { raycast } from './engine/collision.ts'
 import { parseLevel } from './world/level.ts'
+import { worldSpace } from './world/space.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
@@ -37,6 +38,7 @@ if (!canvas) throw new Error('#viewport canvas missing')
 const level = parseLevel(e1m1)
 const view = new RetroRenderer(canvas)
 const overlay = document.querySelector<HTMLElement>('#gate')
+const space = worldSpace(level)
 const s = level.cellSize
 const rng = mulberry32(0xc0ffee)
 
@@ -97,25 +99,36 @@ function shootPellet(angleOffset: number): void {
   const wallHit =
     horizontal > 1e-6 ? raycast(level, player.x, player.z, dir.x, dir.z, def.range) : null
 
-  const eyeY = (EYE_HEIGHT + player.eyeOffset) * level.wallHeight
+  // Y is NOT scaled by cellSize. geometry.ts builds walls from 0 to
+  // `wallHeight` while X and Z are multiplied by `cellSize`, so the room is
+  // wallHeight units tall and the camera sits at eyeY directly. Scaling Y here
+  // too puts the muzzle above the ceiling and every grain outside the room.
+  const eyeY = space.eyeY(EYE_HEIGHT + player.eyeOffset)
   const end = shotEndpoint(
-    eyeY * s,
+    eyeY,
     dir,
     (wallHit ? wallHit.distance : Infinity) * s,
     def.range * s,
-    0,
-    level.wallHeight * s,
+    space.floorY,
+    space.ceilingY,
   )
 
   const originX = player.x * s
   const originZ = player.z * s
-  const muzzleY = eyeY * s - 0.1 * s
+
+  // Offset the visual origin down and to the right so the spray leaves the
+  // shaker in your hand rather than the middle of your forehead.
+  const rightX = Math.cos(player.yaw)
+  const rightZ = -Math.sin(player.yaw)
+  const muzzleX = originX + rightX * 0.35 + dir.x * 0.5
+  const muzzleZ = originZ + rightZ * 0.35 + dir.z * 0.5
+  const muzzleY = eyeY - 0.22
 
   const endX = originX + dir.x * end.distance
-  const endY = eyeY * s + dir.y * end.distance
+  const endY = eyeY + dir.y * end.distance
   const endZ = originZ + dir.z * end.distance
 
-  tracers.emitShot(originX, muzzleY, originZ, endX, endY, endZ, 5)
+  tracers.emitShot(muzzleX, muzzleY, muzzleZ, endX, endY, endZ, rng)
 
   if (end.stoppedBy !== 'range') {
     // Scatter off whatever was actually hit, using that surface's normal.
@@ -165,7 +178,7 @@ new Loop({
   },
 
   render() {
-    const eyeY = (EYE_HEIGHT + player.eyeOffset) * level.wallHeight
+    const eyeY = space.eyeY(EYE_HEIGHT + player.eyeOffset)
     view.camera.position.set(player.x * s, eyeY, player.z * s)
     view.camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ')
     lantern.position.copy(view.camera.position)

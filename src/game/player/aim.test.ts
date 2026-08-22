@@ -117,6 +117,22 @@ describe('shotEndpoint', () => {
     expect(r.distance).toBe(40)
   })
 
+  it('rejects an eye outside the room, which is what a unit mismatch looks like', () => {
+    // The bug this guards: X and Z are world units (grid * cellSize) while Y is
+    // not. Scaling Y as well put the muzzle at 8.8 in a room 4 tall, so every
+    // grain spawned above the ceiling and nothing was visible on screen. The
+    // maths itself stayed perfectly consistent -- only the units were wrong,
+    // which is exactly the class of error no amount of trig checking catches.
+    expect(() => shotEndpoint(8.8, aimDirection(0, 0), 10, 40, 0, 4)).toThrow(RangeError)
+    expect(() => shotEndpoint(8.8, aimDirection(0, 0), 10, 40, 0, 4)).toThrow(/outside the room/)
+    expect(() => shotEndpoint(-1, aimDirection(0, 0), 10, 40, 0, 4)).toThrow(RangeError)
+  })
+
+  it('accepts an eye exactly on the floor or ceiling', () => {
+    expect(() => shotEndpoint(0, aimDirection(0, 0), 10, 40, 0, 4)).not.toThrow()
+    expect(() => shotEndpoint(4, aimDirection(0, 0), 10, 40, 0, 4)).not.toThrow()
+  })
+
   it('never returns a negative distance', () => {
     for (const pitch of PITCHES) {
       for (const wall of [0, 0.5, 5, 100]) {
