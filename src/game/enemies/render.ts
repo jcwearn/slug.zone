@@ -22,8 +22,8 @@ function palette(def: EnemyDef) {
     entry = {
       geo: [
         new THREE.SphereGeometry(0.5, 7, 5),
-        new THREE.SphereGeometry(0.062, 5, 4),
-        new THREE.SphereGeometry(0.026, 4, 3),
+        new THREE.SphereGeometry(0.115, 6, 5),
+        new THREE.SphereGeometry(0.048, 5, 4),
         new THREE.CylinderGeometry(0.038, 0.048, 0.42, 5),
       ],
       mats: [
@@ -43,7 +43,51 @@ export interface EnemyView {
   group: THREE.Group
   /** Squashes on pain and collapses on death. */
   body: THREE.Group
+  /** The two pupils, swung by the googly pendulum below. */
+  pupils: THREE.Mesh[]
+  /** Pendulum state: angle from straight-down, and its velocity. */
+  googlyAngle: number
+  googlyVelocity: number
+  /** Previous position, to derive the lateral motion that drives the swing. */
+  lastX: number
+  lastZ: number
+  /**
+   * Whether lastX/lastZ hold a real previous position yet.
+   *
+   * They start at 0,0 and the enemy does not, so differencing against them on
+   * the first frame reports a velocity of the enemy's whole distance from the
+   * origin divided by one tick -- a few hundred cells per second, which
+   * catapults the pupils. The flag is the difference between "has not moved"
+   * and "has no history".
+   */
+  seeded: boolean
 }
+
+/**
+ * Googly-eye pendulum.
+ *
+ * A real googly eye is a disc that hangs at the bottom of its dome and swings
+ * when you move it, so it is a damped pendulum driven by the creature's own
+ * lateral acceleration -- not a wobble on a timer, which reads as a twitch
+ * rather than as weight.
+ *
+ * GRAVITY sets how insistently the pupil returns to the bottom, DAMPING how
+ * quickly the swing dies, and DRIVE how hard the slug's movement throws it.
+ */
+const GOOGLY_GRAVITY = 34
+const GOOGLY_DAMPING = 2.6
+const GOOGLY_DRIVE = 7
+/** How far the pupil sits from the eyeball's centre. */
+const PUPIL_ORBIT = 0.055
+/**
+ * How far the pupil may swing from straight-down, in radians.
+ *
+ * Past roughly this the pupil is climbing the side of the eyeball, and without
+ * a limit a big enough impulse sends it right over the top and spinning, which
+ * reads as broken rather than funny. Exported so the test asserts the actual
+ * bound rather than a number copied from here.
+ */
+export const GOOGLY_LIMIT = 1.35
 
 export function buildEnemyView(def: EnemyDef): EnemyView {
   const { geo, mats } = palette(def)
@@ -53,6 +97,7 @@ export function buildEnemyView(def: EnemyDef): EnemyView {
   const group = new THREE.Group()
   const body = new THREE.Group()
   group.add(body)
+  const pupils: THREE.Mesh[] = []
 
   // An elongated blob rather than a sphere: slugs are longer than they are
   // wide, and the taper is what tells you which end is the head.
@@ -78,19 +123,22 @@ export function buildEnemyView(def: EnemyDef): EnemyView {
     stalk.rotation.z = side * 0.22
     body.add(stalk)
 
-    // Eyeball plus a smaller pupil in front of it.
+    // Big white eyeball with a loose dark pupil -- googly eyes.
     //
-    // The eyeball was radius 0.16 against a head of radius 0.25 -- 64% of the
-    // head -- and solid black, so it read as two balloons rather than eyes.
-    // A pale sclera with a small dark pupil gives it something to look WITH,
-    // and the pupil sits slightly forward so the gaze direction is legible.
+    // The originals were solid black spheres of radius 0.16 against a head of
+    // radius 0.25, which read as two balloons stuck to a slug. Making them
+    // white with a smaller pupil is what turns them into eyes, and letting the
+    // pupil hang and swing is what makes them funny.
     const eye = new THREE.Mesh(eyeGeo, sclera)
     eye.position.set(side * 0.155, 0.9, -0.66)
     body.add(eye)
 
     const iris = new THREE.Mesh(pupilGeo, pupil)
-    iris.position.set(side * 0.16, 0.9, -0.706)
+    // Parked at the eyeball's centre; poseEnemy swings it each frame. Slightly
+    // forward of the eyeball so it never sinks inside it.
+    iris.position.set(side * 0.155, 0.9, -0.755)
     body.add(iris)
+    pupils.push(iris)
   }
 
   const foot = new THREE.Mesh(blobGeo, dark)
@@ -98,7 +146,16 @@ export function buildEnemyView(def: EnemyDef): EnemyView {
   foot.position.y = 0.08
   body.add(foot)
 
-  return { group, body }
+  return {
+    group,
+    body,
+    pupils,
+    googlyAngle: 0,
+    googlyVelocity: 0,
+    lastX: 0,
+    lastZ: 0,
+    seeded: false,
+  }
 }
 
 /**
@@ -107,7 +164,15 @@ export function buildEnemyView(def: EnemyDef): EnemyView {
  * Slugs move by peristalsis, so the idle animation is a travelling squash
  * rather than a walk cycle -- there are no legs to swing.
  */
-export function poseEnemy(view: EnemyView, enemy: Enemy, cellSize: number, roomHeight: number) {
+export function poseEnemy(
+  view: EnemyView,
+  enemy: Enemy,
+  cellSize: number,
+  roomHeight: number,
+  dt = 0,
+) {
+  swingPupils(view, enemy, dt)
+
   const { def, mind } = enemy
   const scale = def.height * roomHeight
 
@@ -161,4 +226,61 @@ export function disposeEnemyMeshes() {
     for (const m of mats) m.dispose()
   }
   shared.clear()
+}
+
+/**
+ * Advance the googly pendulum and place the pupils.
+ *
+ * Driven by the slug's own lateral movement: `lateral` is its velocity
+ * projected onto its right vector, so turning and strafing throw the pupils
+ * sideways while charging straight at you barely moves them. That difference
+ * is the whole joke.
+ *
+ * The first call only records the position: with no previous frame to
+ * difference against there is no velocity, and inventing one from the origin
+ * launches the pupils across the eyeball.
+ */
+function swingPupils(view: EnemyView, enemy: Enemy, dt: number): void {
+  if (dt > 0 && view.seeded) {
+    const vx = (enemy.x - view.lastX) / dt
+    const vz = (enemy.z - view.lastZ) / dt
+
+    // Right vector for the shared facing convention, forward = (-sin, -cos).
+    const rightX = Math.cos(enemy.facing)
+    const rightZ = -Math.sin(enemy.facing)
+    const lateral = vx * rightX + vz * rightZ
+
+    const acceleration =
+      -GOOGLY_GRAVITY * Math.sin(view.googlyAngle) -
+      GOOGLY_DAMPING * view.googlyVelocity -
+      lateral * GOOGLY_DRIVE
+
+    view.googlyVelocity += acceleration * dt
+    view.googlyAngle += view.googlyVelocity * dt
+
+    if (view.googlyAngle > GOOGLY_LIMIT) {
+      view.googlyAngle = GOOGLY_LIMIT
+      view.googlyVelocity = Math.min(0, view.googlyVelocity)
+    } else if (view.googlyAngle < -GOOGLY_LIMIT) {
+      view.googlyAngle = -GOOGLY_LIMIT
+      view.googlyVelocity = Math.max(0, view.googlyVelocity)
+    }
+  }
+
+  view.lastX = enemy.x
+  view.lastZ = enemy.z
+  view.seeded = true
+
+  const offsetX = Math.sin(view.googlyAngle) * PUPIL_ORBIT
+  const offsetY = -Math.cos(view.googlyAngle) * PUPIL_ORBIT
+
+  for (let i = 0; i < view.pupils.length; i++) {
+    const side = i === 0 ? -1 : 1
+    const pupil = view.pupils[i]
+    // A touch of phase difference between the two, so they do not move as one
+    // rigid unit. Googly eyes never quite agree with each other.
+    const skew = 1 + side * 0.12
+    pupil.position.x = side * 0.155 + offsetX * skew
+    pupil.position.y = 0.9 + offsetY
+  }
 }

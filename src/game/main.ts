@@ -252,7 +252,7 @@ new Loop({
     if (lastPhase === 'lowering' && arsenal.phase === 'raising') playSwitch()
     lastPhase = arsenal.phase
 
-    for (const entry of live) poseEnemy(entry.view, entry.enemy, s, level.wallHeight)
+    for (const entry of live) poseEnemy(entry.view, entry.enemy, s, level.wallHeight, dt)
 
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)
