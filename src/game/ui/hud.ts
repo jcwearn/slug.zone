@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { drawText, measureText } from './font.ts'
+import { drawFace, FACE_HEIGHT, FACE_WIDTH } from './face.ts'
 import { faceBucket, type PlayerHealth } from '../player/health.ts'
 import type { Arsenal } from '../weapons/arsenal.ts'
 import { definition } from '../weapons/arsenal.ts'
@@ -16,6 +17,7 @@ import { definition } from '../weapons/arsenal.ts'
  */
 
 const WIDTH = 320
+// Tall enough for the 26px portrait plus its frame and a little breathing room.
 const HEIGHT = 34
 const LIME = '#54e508'
 const DIM = '#2c7a06'
@@ -118,63 +120,22 @@ export class Hud {
   }
 
   /**
-   * The face portrait: five damage states plus dead.
+   * The portrait, with a recessed frame around it.
    *
-   * Drawn rather than loaded, in the same spirit as the wall textures. It is
-   * the one part of a Doom HUD that tells you how you are doing without being
-   * read, so it gets progressively more battered and finally closes its eyes.
+   * The face itself lives in face.ts as an editable pixel grid; this only
+   * places and frames it.
    */
   private drawFace(bucket: number, x: number, y: number): void {
     const ctx = this.ctx
-    const size = 26
-
     ctx.fillStyle = '#0d1408'
-    ctx.fillRect(x - 2, y - 2, size + 4, size + 4)
+    ctx.fillRect(x - 2, y - 2, FACE_WIDTH + 4, FACE_HEIGHT + 4)
     ctx.fillStyle = DIM
-    ctx.strokeStyle = DIM
-    ctx.strokeRect(x - 1.5, y - 1.5, size + 3, size + 3)
+    ctx.fillRect(x - 2, y - 2, FACE_WIDTH + 4, 1)
+    ctx.fillRect(x - 2, y + FACE_HEIGHT + 1, FACE_WIDTH + 4, 1)
+    ctx.fillRect(x - 2, y - 2, 1, FACE_HEIGHT + 4)
+    ctx.fillRect(x + FACE_WIDTH + 1, y - 2, 1, FACE_HEIGHT + 4)
 
-    // Skin drains toward grey-green as the buckets climb.
-    const skin = ['#d9a06a', '#d1965f', '#c58a55', '#b5794a', '#9c6440', '#6f5a4a'][bucket]
-    ctx.fillStyle = skin
-    ctx.fillRect(x + 3, y + 2, size - 6, size - 4)
-
-    // Hair.
-    ctx.fillStyle = '#3b2a18'
-    ctx.fillRect(x + 3, y + 2, size - 6, 4)
-
-    if (bucket >= 5) {
-      // Dead: eyes crossed out, mouth flat.
-      ctx.fillStyle = '#241a12'
-      for (const ex of [x + 7, x + 15]) {
-        ctx.fillRect(ex, y + 10, 4, 1)
-        ctx.fillRect(ex + 1, y + 9, 1, 3)
-      }
-      ctx.fillRect(x + 8, y + 18, 10, 1)
-      return
-    }
-
-    // Eyes, narrowing as it gets worse.
-    ctx.fillStyle = '#1a1208'
-    const eyeHeight = bucket >= 3 ? 1 : 2
-    ctx.fillRect(x + 7, y + 10, 3, eyeHeight)
-    ctx.fillRect(x + 16, y + 10, 3, eyeHeight)
-
-    // Mouth: a line, then a grimace, then open.
-    ctx.fillStyle = '#5a2418'
-    if (bucket <= 1) ctx.fillRect(x + 9, y + 18, 8, 1)
-    else if (bucket <= 3) ctx.fillRect(x + 8, y + 17, 10, 2)
-    else ctx.fillRect(x + 8, y + 16, 10, 4)
-
-    // Blood, appearing from the third bucket and spreading.
-    if (bucket >= 2) {
-      ctx.fillStyle = RED
-      ctx.fillRect(x + 5, y + 7, 2, 4 + bucket)
-    }
-    if (bucket >= 3) {
-      ctx.fillStyle = RED
-      ctx.fillRect(x + 18, y + 9, 2, 3 + bucket)
-    }
+    drawFace(ctx, bucket, x, y, 1)
   }
 
   dispose(): void {
