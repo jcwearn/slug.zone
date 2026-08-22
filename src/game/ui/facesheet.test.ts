@@ -31,4 +31,10 @@ describe('public/faces.png', () => {
   it('stays small enough to ship without thought', () => {
     expect(statSync(path).size).toBeLessThan(80 * 1024)
   })
+
+  it('has an alpha channel', () => {
+    // Colour type 6 is RGBA. The portraits are cut out, so the HUD's own dark
+    // background shows through instead of a white card sitting on it.
+    expect(buf[25]).toBe(6)
+  })
 })

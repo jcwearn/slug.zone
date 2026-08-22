@@ -111,7 +111,7 @@ export class Hud {
     drawText(ctx, 'ARMOUR', 70, 9, DIM, 1)
     drawText(ctx, `${Math.ceil(health.armour)}%`, 70, 22, health.armour > 0 ? LIME : DIM, 2)
 
-    this.drawFace(faceBucket(health), expression, 142, 3)
+    this.drawFace(faceBucket(health), expression, 142, 4)
 
     // Keys, as three small pips. Present ones light up.
     const keyColours: [string, string][] = [
