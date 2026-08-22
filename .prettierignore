@@ -1,0 +1,9 @@
+# npm owns this.
+package-lock.json
+
+# Local agent state, untracked. Present only on a developer's machine, so
+# formatting it would fail check runs for some people and not others.
+.claude/
+
+# Build output.
+dist/
