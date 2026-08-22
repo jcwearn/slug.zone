@@ -18,7 +18,7 @@ import { buildDoors, resetDoors, tickDoors, tryOpen, useHint, useTarget } from '
 import { DoorViews } from './world/doorview.ts'
 import { createExplored, resetExplored, revealFrom } from './world/explored.ts'
 import { atExit, createSession, finishLevel, tickRun } from './session.ts'
-import { createTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
+import { createTally, pressTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
 import { browserStorage, loadRecords, recordTime, saveRecords } from './save/scores.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
@@ -415,8 +415,16 @@ new Loop({
       // so a held button cannot do both.
       if (input.isDown('fire')) {
         input.releaseFire()
-        if (!tally.done) snapTally(tally)
-        else if (tally.hold > 0.4) restart()
+        const press = pressTally(tally)
+        if (press === 'snap') snapTally(tally)
+        else if (press === 'restart') {
+          // Straight out. `restart()` nulls `tally`, and TypeScript does not
+          // un-narrow a module-level `let` across a call -- so everything
+          // below here still believes it holds a tally and would hand null to
+          // the intermission, which sets itself visible before it reads it.
+          restart()
+          return
+        }
       }
 
       screen.showTally(level.name, tally)

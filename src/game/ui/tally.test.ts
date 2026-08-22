@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createTally, snapTally, stepTally } from './tally.ts'
+import { createTally, pressTally, READ_TIME, snapTally, stepTally } from './tally.ts'
 import { createSession, type Session } from '../session.ts'
 import { parseLevel } from '../world/level.ts'
 import e1m1 from '../world/levels/e1m1.ts'
@@ -121,5 +121,40 @@ describe('snapTally', () => {
     stepTally(tally, 5)
     snapTally(tally)
     expect(tally.hold).toBe(0)
+  })
+})
+
+describe('pressTally', () => {
+  it('skips the count-up while it is still counting', () => {
+    const tally = createTally(run(), null, false)
+    expect(pressTally(tally)).toBe('snap')
+    stepTally(tally, STEP)
+    expect(pressTally(tally)).toBe('snap')
+  })
+
+  it('ignores the click that finished the level', () => {
+    // The fire button is still down from whatever was shot last. Without the
+    // hold, the press that skipped the count-up also restarts, and the tally
+    // is gone before anyone can read it.
+    const tally = createTally(run(), null, false)
+    snapTally(tally)
+    expect(tally.hold).toBe(0)
+    expect(pressTally(tally)).toBe('ignored')
+  })
+
+  it('replays once the tally has been up long enough to read', () => {
+    const tally = createTally(run(), null, false)
+    snapTally(tally)
+    for (let t = 0; t <= READ_TIME + STEP; t += STEP) stepTally(tally, STEP)
+    expect(pressTally(tally)).toBe('restart')
+  })
+
+  it('holds the line right at the threshold', () => {
+    const tally = createTally(run(), null, false)
+    snapTally(tally)
+    stepTally(tally, READ_TIME)
+    expect(pressTally(tally), 'exactly at the threshold is still too soon').toBe('ignored')
+    stepTally(tally, STEP)
+    expect(pressTally(tally)).toBe('restart')
   })
 })

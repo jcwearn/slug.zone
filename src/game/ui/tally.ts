@@ -103,3 +103,22 @@ export function snapTally(tally: Tally): void {
   tally.done = true
   tally.hold = 0
 }
+
+export type TallyPress = 'ignored' | 'snap' | 'restart'
+
+/**
+ * What a click on the intermission means.
+ *
+ * Split out of the loop so the two-stage press is a test rather than a thing
+ * you confirm by finishing the level. The hold is what stops one click doing
+ * both jobs: the fire button is still down from whatever the player shot last,
+ * so without it the same press that skipped the count-up also restarts, and
+ * the tally is gone before it can be read.
+ */
+export function pressTally(tally: Tally): TallyPress {
+  if (!tally.done) return 'snap'
+  return tally.hold > READ_TIME ? 'restart' : 'ignored'
+}
+
+/** Seconds the finished tally must have been up before a click replays. */
+export const READ_TIME = 0.4

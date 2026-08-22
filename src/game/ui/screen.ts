@@ -95,8 +95,20 @@ export class ScreenLayer {
     this.minimap.invalidate()
   }
 
-  /** The level-complete tally, over everything else. */
-  showTally(levelName: string, tally: Tally): void {
+  /**
+   * The level-complete tally, over everything else.
+   *
+   * Takes the tally OR null, and null hides it. Visibility is then a property
+   * of whether a run has finished rather than something two call sites have to
+   * remember to keep in step -- which they did not: restarting from the tally
+   * nulled it and then fell through to this method, which turned the overlay
+   * back on before throwing on the null it had just been handed.
+   */
+  showTally(levelName: string, tally: Tally | null): void {
+    if (!tally) {
+      this.intermission.hide()
+      return
+    }
     this.intermission.show(levelName, tally)
   }
 
