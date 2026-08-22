@@ -1,4 +1,9 @@
-import { moveWithCollision, PLAYER_RADIUS } from '../engine/collision.ts'
+import {
+  moveWithCollision,
+  PLAYER_RADIUS,
+  slideAlongDiscs,
+  type Disc,
+} from '../engine/collision.ts'
 import { moveVector, type Input } from '../engine/input.ts'
 import { clamp } from '../engine/math.ts'
 import type { Level } from '../world/level.ts'
@@ -38,7 +43,14 @@ export function createPlayer(level: Level): PlayerState {
   }
 }
 
-export function updatePlayer(player: PlayerState, level: Level, input: Input, dt: number): void {
+export function updatePlayer(
+  player: PlayerState,
+  level: Level,
+  input: Input,
+  dt: number,
+  /** Creatures the player cannot walk through. */
+  blockers: Disc[] = [],
+): void {
   const look = input.consumeLook()
   player.yaw += look.yaw
   // Just shy of straight up/down: at exactly +/-PI/2 the camera basis
@@ -54,8 +66,11 @@ export function updatePlayer(player: PlayerState, level: Level, input: Input, dt
 
   const before = { x: player.x, z: player.z }
   const after = moveWithCollision(level, player.x, player.z, dx, dz, PLAYER_RADIUS)
-  player.x = after.x
-  player.z = after.z
+  // Walls first, then creatures. Doing it the other way lets a slug press you
+  // into a wall and then the wall pass resolves you back out through the slug.
+  const clear = slideAlongDiscs(before.x, before.z, after.x, after.z, PLAYER_RADIUS, blockers)
+  player.x = clear.x
+  player.z = clear.z
 
   const travelled = Math.hypot(player.x - before.x, player.z - before.z)
   if (travelled > 1e-5) {

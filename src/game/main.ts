@@ -3,17 +3,28 @@ import { RetroRenderer } from './engine/renderer.ts'
 import { Loop } from './engine/loop.ts'
 import { Input } from './engine/input.ts'
 import { mulberry32 } from './engine/math.ts'
-import { raycast } from './engine/collision.ts'
+import { PLAYER_RADIUS, raycast, type Disc } from './engine/collision.ts'
 import { parseLevel } from './world/level.ts'
 import { worldSpace } from './world/space.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
-import { SLUG_BROWN, SLUG_DARK } from './data/palette.ts'
+import {
+  enemyCylinder,
+  separateEnemies,
+  spawnEnemy,
+  targetable,
+  updateEnemy,
+  type Enemy,
+} from './enemies/enemy.ts'
+import { buildEnemyView, poseEnemy, type EnemyView } from './enemies/render.ts'
+import { damage as damageEnemy, isAlive } from './enemies/fsm.ts'
+import { nearestHit, verticalAutoAim } from './enemies/hitscan.ts'
 import {
   addAmmo,
   createArsenal,
   cycleWeapon,
+  damageAtRange,
   definition,
   fire,
   giveWeapon,
@@ -23,7 +34,10 @@ import {
 import { Viewmodel } from './weapons/viewmodel.ts'
 import { Tracers } from './weapons/tracers.ts'
 import {
+  playAlert,
   playDryFire,
+  playGib,
+  playSquelch,
   playGrinderBlast,
   playImpact,
   playSaltBlast,
@@ -55,20 +69,34 @@ view.scene.add(meshes.group)
 const tracers = new Tracers()
 view.scene.add(tracers.mesh)
 
+// Pickups are still inert markers; they become real in G5.
 const markerGeo = new THREE.IcosahedronGeometry(0.5, 0)
-for (const entity of level.entities) {
-  const isPickup = entity.type === 'pickup'
-  const marker = new THREE.Mesh(
-    markerGeo,
-    new THREE.MeshLambertMaterial({
-      color: isPickup ? 0x54e508 : SLUG_BROWN,
-      emissive: isPickup ? 0x143a02 : SLUG_DARK,
-      flatShading: true,
-    }),
-  )
-  marker.position.set(entity.x * s, isPickup ? 0.3 * s : 0.25 * s, entity.z * s)
-  marker.scale.setScalar(isPickup ? s * 0.18 : s * 0.3)
+const markerMat = new THREE.MeshLambertMaterial({
+  color: 0x54e508,
+  emissive: 0x143a02,
+  flatShading: true,
+})
+for (const entity of level.entities.filter((e) => e.type === 'pickup')) {
+  const marker = new THREE.Mesh(markerGeo, markerMat)
+  marker.position.set(entity.x * s, 0.3 * level.wallHeight, entity.z * s)
+  marker.scale.setScalar(s * 0.18)
   view.scene.add(marker)
+}
+
+interface Live {
+  enemy: Enemy
+  view: EnemyView
+  /** Whether it had noticed the player last tick, for the alert sound. */
+  wasIdle: boolean
+}
+
+const live: Live[] = []
+for (const entity of level.entities) {
+  if (entity.type === 'pickup') continue
+  const enemy = spawnEnemy(entity.type, entity.x, entity.z)
+  const enemyView = buildEnemyView(enemy.def)
+  view.scene.add(enemyView.group)
+  live.push({ enemy, view: enemyView, wasIdle: true })
 }
 
 const player = createPlayer(level)
@@ -88,9 +116,41 @@ const input = new Input(canvas, () => {
 let lastPhase = arsenal.phase
 
 /** Hitscan one pellet and draw what it did. */
+/**
+ * Doom-style vertical aim assist, in radians.
+ *
+ * A Grub is knee-high and the player's eye is well above it, so a level shot
+ * passes over its head. Doom avoided this by not having free look at all. The
+ * cone is a full 3D angle, so aiming deliberately at the ceiling still misses.
+ */
+const AUTOAIM_CONE = 0.25
+
 function shootPellet(angleOffset: number): void {
   const def = definition(arsenal)
-  const dir = aimDirection(player.yaw + angleOffset, player.pitch)
+  const raw = aimDirection(player.yaw + angleOffset, player.pitch)
+
+  const targets = targetable(live.map((l) => l.enemy)).map((enemy) => ({
+    target: enemy,
+    cylinder: enemyCylinder(enemy, s, level.wallHeight),
+  }))
+
+  // Y is NOT scaled by cellSize. geometry.ts builds walls from 0 to
+  // `wallHeight` while X and Z are multiplied by `cellSize`, so the room is
+  // wallHeight units tall and the camera sits at eyeY directly. worldSpace is
+  // the one place that knows this.
+  const eyeY = space.eyeY(EYE_HEIGHT + player.eyeOffset)
+
+  const dir = verticalAutoAim(
+    player.x * s,
+    eyeY,
+    player.z * s,
+    raw.x,
+    raw.y,
+    raw.z,
+    targets,
+    def.range * s,
+    AUTOAIM_CONE,
+  )
 
   // The wall raycast is 2D on the ground plane, so it yields a HORIZONTAL
   // distance; shotEndpoint converts that to a distance along the pitched ray
@@ -99,11 +159,6 @@ function shootPellet(angleOffset: number): void {
   const wallHit =
     horizontal > 1e-6 ? raycast(level, player.x, player.z, dir.x, dir.z, def.range) : null
 
-  // Y is NOT scaled by cellSize. geometry.ts builds walls from 0 to
-  // `wallHeight` while X and Z are multiplied by `cellSize`, so the room is
-  // wallHeight units tall and the camera sits at eyeY directly. Scaling Y here
-  // too puts the muzzle above the ceiling and every grain outside the room.
-  const eyeY = space.eyeY(EYE_HEIGHT + player.eyeOffset)
   const end = shotEndpoint(
     eyeY,
     dir,
@@ -128,6 +183,30 @@ function shootPellet(angleOffset: number): void {
   const endY = eyeY + dir.y * end.distance
   const endZ = originZ + dir.z * end.distance
 
+  // Enemies are tested only out to the wall distance, so a shot can never
+  // kill something in the next room.
+  const struck = nearestHit(muzzleX, muzzleY, muzzleZ, dir.x, dir.y, dir.z, targets, end.distance)
+
+  if (struck) {
+    const dealt = damageAtRange(def, struck.distance / s)
+    const wasAlive = isAlive(struck.target.mind)
+    damageEnemy(struck.target.mind, struck.target.def, dealt, rng)
+
+    const hx = muzzleX + dir.x * struck.distance
+    const hy = muzzleY + dir.y * struck.distance
+    const hz = muzzleZ + dir.z * struck.distance
+    tracers.emitShot(muzzleX, muzzleY, muzzleZ, hx, hy, hz, rng)
+    tracers.emitImpact(hx, hy, hz, -dir.x, -dir.z, rng)
+
+    if (wasAlive && struck.target.mind.justDied) {
+      if (struck.target.mind.gibbed) playGib()
+      else playSquelch(rng())
+    } else {
+      playSquelch(rng() * 0.5)
+    }
+    return
+  }
+
   tracers.emitShot(muzzleX, muzzleY, muzzleZ, endX, endY, endZ, rng)
 
   if (end.stoppedBy !== 'range') {
@@ -147,7 +226,13 @@ new Loop({
     }
 
     const before = { x: player.x, z: player.z }
-    updatePlayer(player, level, input, dt)
+    // Live slugs only -- corpses are scenery you walk over.
+    const blockers: Disc[] = targetable(live.map((l) => l.enemy)).map((e) => ({
+      x: e.x,
+      z: e.z,
+      radius: e.def.radius,
+    }))
+    updatePlayer(player, level, input, dt, blockers)
     const moving = Math.hypot(player.x - before.x, player.z - before.z) > 1e-5
 
     for (const slot of input.consumeSlots()) selectSlot(arsenal, slot)
@@ -169,9 +254,25 @@ new Loop({
       }
     }
 
+    for (const entry of live) {
+      updateEnemy(entry.enemy, level, player.x, player.z, dt, PLAYER_RADIUS)
+      const nowIdle = entry.enemy.mind.state === 'idle'
+      if (entry.wasIdle && !nowIdle) playAlert(rng())
+      entry.wasIdle = nowIdle
+    }
+
+    // After everyone has moved, so the push resolves the positions they
+    // actually ended up in rather than the ones they started from.
+    separateEnemies(
+      live.map((l) => l.enemy),
+      level,
+    )
+
     tickArsenal(arsenal, dt)
     if (lastPhase === 'lowering' && arsenal.phase === 'raising') playSwitch()
     lastPhase = arsenal.phase
+
+    for (const entry of live) poseEnemy(entry.view, entry.enemy, s, level.wallHeight, dt)
 
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)
