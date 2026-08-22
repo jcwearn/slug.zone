@@ -167,6 +167,71 @@ describe('reachability', () => {
     const seen = reachableFromStart(level)
     expect(seen.has(1 * 5 + 3)).toBe(true)
   })
+
+  it('strands a vault whose key is locked inside it', () => {
+    // The mistake this exists for: a red key sealed behind the red door it
+    // opens. Every other check here passes, and the level ships unfinishable.
+    const level = parseLevel(
+      withGrid(['#######', '#..R..#', '#######'], {
+        legend: { ...base.legend, R: { door: { key: 'red' } } },
+        entities: [
+          { type: 'player', x: 1.5, z: 1.5 },
+          { type: 'pickup', item: 'redkey', x: 4.5, z: 1.5 },
+        ],
+      }),
+    )
+    const stranded = unreachableWalkableCells(level)
+    expect(stranded.length).toBeGreaterThan(0)
+    // The unopenable door reports itself, which is the clearest message there
+    // is about which door is the problem.
+    expect(stranded.some((c) => c.door)).toBe(true)
+  })
+
+  it('opens the same vault when the key is on the near side', () => {
+    // The other half. Without this the test above passes for a version that
+    // simply refuses every keyed door and never collects anything.
+    const level = parseLevel(
+      withGrid(['#######', '#..R..#', '#######'], {
+        legend: { ...base.legend, R: { door: { key: 'red' } } },
+        entities: [
+          { type: 'player', x: 1.5, z: 1.5 },
+          { type: 'pickup', item: 'redkey', x: 2.5, z: 1.5 },
+        ],
+      }),
+    )
+    expect(unreachableWalkableCells(level)).toEqual([])
+  })
+
+  it('resolves a chain of keys, each behind the last', () => {
+    // A single pass collects red and stops, leaving everything past the blue
+    // door stranded. Only a fixed point gets to the end.
+    const level = parseLevel(
+      withGrid(['#########', '#..R..B.#', '#########'], {
+        legend: {
+          ...base.legend,
+          R: { door: { key: 'red' } },
+          B: { door: { key: 'blue' } },
+        },
+        entities: [
+          { type: 'player', x: 1.5, z: 1.5 },
+          { type: 'pickup', item: 'redkey', x: 2.5, z: 1.5 },
+          { type: 'pickup', item: 'bluekey', x: 5.5, z: 1.5 },
+        ],
+      }),
+    )
+    expect(unreachableWalkableCells(level)).toEqual([])
+  })
+
+  it('never lets a secret be the only way through', () => {
+    // A level that can only be completed by finding a secret is a level most
+    // players cannot complete at all.
+    const level = parseLevel(
+      withGrid(['#####', '#.S.#', '#####'], {
+        entities: [{ type: 'player', x: 1.5, z: 1.5 }],
+      }),
+    )
+    expect(reachableFromStart(level).has(1 * 5 + 3)).toBe(false)
+  })
 })
 
 describe('shipped levels', () => {
@@ -224,6 +289,45 @@ describe('shipped levels', () => {
       expect(unknown, 'pickup items with no definition').toEqual([])
     },
   )
+
+  it.each(levels.map((l) => [l.id, l] as const))(
+    '%s authors no door two cells wide',
+    (_id, src) => {
+      // Each door cell is its own leaf with its own state, so a two-wide
+      // doorway opens one half and leaves the other standing. Nothing stops a
+      // level being written that way except this.
+      const level = parseLevel(src)
+      const leaves = level.cells.filter((c) => c.door ?? c.secretWall)
+      const touching = leaves.filter((a) =>
+        leaves.some((b) => Math.abs(a.x - b.x) + Math.abs(a.z - b.z) === 1),
+      )
+      expect(
+        touching.map((c) => `${c.x},${c.z}`),
+        'door or secret cells sharing an edge',
+      ).toEqual([])
+    },
+  )
+
+  it.each(levels.map((l) => [l.id, l] as const))('%s reaches every secret', (_id, src) => {
+    // A secret walled in on all four sides can never be found, so 100% is
+    // unattainable and the tally is a lie the player cannot disprove.
+    const level = parseLevel(src)
+    const seen = reachableFromStart(level)
+    const buried = level.cells
+      .filter((c) => c.secretWall)
+      .filter((c) =>
+        [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ].every(([dx, dz]) => !seen.has((c.z + dz) * level.width + (c.x + dx))),
+      )
+    expect(
+      buried.map((c) => `${c.x},${c.z}`),
+      'secrets with no reachable cell beside them',
+    ).toEqual([])
+  })
 
   it.each(levels.map((l) => [l.id, l] as const))(
     '%s puts every entity within reach',

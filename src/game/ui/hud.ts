@@ -19,7 +19,19 @@ import { definition } from '../weapons/arsenal.ts'
 
 const WIDTH = 320
 // Tall enough for the 32px portrait plus its frame.
-const HEIGHT = 46
+export const HUD_HEIGHT = 46
+
+/**
+ * The two text rows: small dim captions, big values under them.
+ *
+ * Named and shared because they were not. The ammo count sat seven pixels
+ * higher than the health and armour figures beside it, which nothing showed
+ * until a weapon turned up with a name long enough to reach across -- "THE
+ * GRINDER" ran straight through the digits. Both columns now sit on the same
+ * two baselines by construction, and `hud.test.ts` holds them apart.
+ */
+export const LABEL_Y = 9
+export const VALUE_Y = 22
 const LIME = '#54e508'
 const DIM = '#2c7a06'
 const RED = '#c8341a'
@@ -37,7 +49,7 @@ export class Hud {
   constructor() {
     this.canvas = document.createElement('canvas')
     this.canvas.width = WIDTH
-    this.canvas.height = HEIGHT
+    this.canvas.height = HUD_HEIGHT
     const ctx = this.canvas.getContext('2d')
     if (!ctx) throw new Error('2d context unavailable')
     this.ctx = ctx
@@ -54,7 +66,7 @@ export class Hud {
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false }),
     )
-    const barHeight = HEIGHT / 200
+    const barHeight = HUD_HEIGHT / 200
     this.mesh.scale.set(1, barHeight, 1)
     this.mesh.position.set(0.5, barHeight / 2, 0)
 
@@ -95,22 +107,22 @@ export class Hud {
     expression: Expression,
   ): void {
     const ctx = this.ctx
-    ctx.clearRect(0, 0, WIDTH, HEIGHT)
+    ctx.clearRect(0, 0, WIDTH, HUD_HEIGHT)
 
     ctx.fillStyle = 'rgba(6, 10, 4, 0.82)'
-    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    ctx.fillRect(0, 0, WIDTH, HUD_HEIGHT)
     ctx.fillStyle = DIM
     ctx.fillRect(0, 0, WIDTH, 1)
 
     // Health, left. Turns red under a quarter so the warning is peripheral --
     // you should not have to read a number to know you are in trouble.
     const critical = health.hp / health.hpMax <= 0.25
-    drawText(ctx, 'HEALTH', 8, 9, DIM, 1)
-    drawText(ctx, `${Math.ceil(health.hp)}%`, 8, 22, critical ? RED : LIME, 2)
+    drawText(ctx, 'HEALTH', 8, LABEL_Y, DIM, 1)
+    drawText(ctx, `${Math.ceil(health.hp)}%`, 8, VALUE_Y, critical ? RED : LIME, 2)
 
     // Armour, next along, dimmed to nothing when there is none.
-    drawText(ctx, 'ARMOUR', 70, 9, DIM, 1)
-    drawText(ctx, `${Math.ceil(health.armour)}%`, 70, 22, health.armour > 0 ? LIME : DIM, 2)
+    drawText(ctx, 'ARMOUR', 70, LABEL_Y, DIM, 1)
+    drawText(ctx, `${Math.ceil(health.armour)}%`, 70, VALUE_Y, health.armour > 0 ? LIME : DIM, 2)
 
     this.drawFace(faceBucket(health), expression, 142, 4)
 
@@ -127,11 +139,11 @@ export class Hud {
     // change width.
     const def = definition(arsenal)
     const name = def.name.toUpperCase()
-    drawText(ctx, name, WIDTH - 8 - measureText(name, 1), 9, DIM, 1)
+    drawText(ctx, name, WIDTH - 8 - measureText(name, 1), LABEL_Y, DIM, 1)
 
     const ammoText = def.ammo === null ? '--' : `${arsenal.ammo[def.ammo]}`
     const empty = def.ammo !== null && arsenal.ammo[def.ammo] <= 0
-    drawText(ctx, ammoText, WIDTH - 8 - measureText(ammoText, 2), 15, empty ? RED : BONE, 2)
+    drawText(ctx, ammoText, WIDTH - 8 - measureText(ammoText, 2), VALUE_Y, empty ? RED : BONE, 2)
 
     this.texture.needsUpdate = true
   }

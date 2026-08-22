@@ -413,3 +413,148 @@ export function playKeyPickup(): void {
   osc.start(now)
   osc.stop(now + 0.32)
 }
+
+/**
+ * A door grinding upward: noise through a lowpass sweeping up, over a slow
+ * rumble.
+ *
+ * Long on purpose -- it has to cover the whole travel of the leaf, or the
+ * sound finishes while the door is still visibly moving and the two stop
+ * reading as the same event.
+ */
+export function playDoor(seconds = 1.1): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const src = noiseSource(ac)
+  if (!src) return
+  const filter = ac.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.Q.value = 3
+  filter.frequency.setValueAtTime(200, now)
+  filter.frequency.exponentialRampToValueAtTime(900, now + seconds)
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.11, now + 0.08)
+  gain.gain.setValueAtTime(0.11, now + seconds - 0.15)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds)
+
+  // The rumble underneath is what gives it mass. Noise alone reads as a hiss.
+  const rumble = ac.createOscillator()
+  rumble.type = 'sawtooth'
+  rumble.frequency.setValueAtTime(52, now)
+  rumble.frequency.linearRampToValueAtTime(38, now + seconds)
+  const rumbleGain = ac.createGain()
+  rumbleGain.gain.setValueAtTime(0.05, now)
+  rumbleGain.gain.exponentialRampToValueAtTime(0.0001, now + seconds)
+
+  src.connect(filter).connect(gain).connect(out)
+  rumble.connect(rumbleGain).connect(out)
+  src.start(now)
+  src.stop(now + seconds + 0.05)
+  rumble.start(now)
+  rumble.stop(now + seconds + 0.05)
+}
+
+/** A door that will not open: a dull thump and two descending blips. */
+export function playLocked(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const thump = ac.createOscillator()
+  thump.type = 'sine'
+  thump.frequency.setValueAtTime(110, now)
+  thump.frequency.exponentialRampToValueAtTime(70, now + 0.12)
+  const thumpGain = ac.createGain()
+  thumpGain.gain.setValueAtTime(0.2, now)
+  thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14)
+  thump.connect(thumpGain).connect(out)
+  thump.start(now)
+  thump.stop(now + 0.15)
+
+  const blip = ac.createOscillator()
+  blip.type = 'square'
+  blip.frequency.setValueAtTime(330, now + 0.06)
+  blip.frequency.setValueAtTime(220, now + 0.13)
+  const blipGain = ac.createGain()
+  blipGain.gain.setValueAtTime(0.0001, now)
+  blipGain.gain.setValueAtTime(0.07, now + 0.06)
+  blipGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+  blip.connect(blipGain).connect(out)
+  blip.start(now)
+  blip.stop(now + 0.23)
+}
+
+/**
+ * Finding a secret: a rising arpeggio.
+ *
+ * Deliberately the most distinctive sound in the game. A secret you are not
+ * told you found is a secret you did not find.
+ */
+export function playSecret(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const notes = [523, 659, 784, 1047]
+  notes.forEach((hz, i) => {
+    const at = now + i * 0.09
+    const osc = ac.createOscillator()
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(hz, at)
+    const gain = ac.createGain()
+    gain.gain.setValueAtTime(0.0001, at)
+    gain.gain.exponentialRampToValueAtTime(0.1, at + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.24)
+    osc.connect(gain).connect(out)
+    osc.start(at)
+    osc.stop(at + 0.26)
+  })
+}
+
+/** Reaching the exit: a long two-note resolve. */
+export function playExit(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  for (const [hz, at, length] of [
+    [392, 0, 0.3],
+    [587, 0.22, 0.75],
+  ]) {
+    const osc = ac.createOscillator()
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(hz, now + at)
+    const gain = ac.createGain()
+    gain.gain.setValueAtTime(0.0001, now + at)
+    gain.gain.exponentialRampToValueAtTime(0.16, now + at + 0.03)
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + at + length)
+    osc.connect(gain).connect(out)
+    osc.start(now + at)
+    osc.stop(now + at + length + 0.02)
+  }
+}
+
+/**
+ * One digit of the intermission tally.
+ *
+ * Kept very short and very quiet: it fires several times a second while a row
+ * climbs, and anything with a tail turns into a drone.
+ */
+export function playTallyTick(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+  const osc = ac.createOscillator()
+  osc.type = 'square'
+  osc.frequency.setValueAtTime(1400, now)
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.035, now)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02)
+  osc.connect(gain).connect(out)
+  osc.start(now)
+  osc.stop(now + 0.03)
+}

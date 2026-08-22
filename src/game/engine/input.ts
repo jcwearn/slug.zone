@@ -40,6 +40,8 @@ export class Input {
   private readonly slotQueue: number[] = []
   /** Net wheel notches since the last consume. */
   private wheelDelta = 0
+  /** Set on the press edge of the use key, cleared when consumed. */
+  private usePressed = false
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -98,6 +100,19 @@ export class Input {
     return out
   }
 
+  /**
+   * True once per physical press of the use key.
+   *
+   * An edge rather than `isDown('use')`, because the OS repeats keydown while
+   * a key is held: a level-triggered use would fire sixty times a second at a
+   * door, and once secrets are counted that is sixty attempts on the same one.
+   */
+  consumeUse(): boolean {
+    const out = this.usePressed
+    this.usePressed = false
+    return out
+  }
+
   private onWheel = (e: WheelEvent) => {
     if (!this.engaged) return
     this.wheelDelta += e.deltaY > 0 ? 1 : -1
@@ -117,6 +132,9 @@ export class Input {
     if (!action) return
     // Space and the arrows scroll the page otherwise, which fights the canvas.
     e.preventDefault()
+    // Latched before the add, so `held` still lacks the action on a genuine
+    // first press and already has it on every auto-repeat.
+    if (action === 'use' && !this.held.has(action)) this.usePressed = true
     this.held.add(action)
   }
 
@@ -134,6 +152,7 @@ export class Input {
     this.held.clear()
     this.slotQueue.length = 0
     this.wheelDelta = 0
+    this.usePressed = false
   }
 
   private onMouseDown = () => {
@@ -152,7 +171,10 @@ export class Input {
     const nowEngaged = document.pointerLockElement === this.canvas
     if (nowEngaged && !this.engaged) this.onEngage?.()
     this.engaged = nowEngaged
-    if (!nowEngaged) this.held.clear()
+    if (!nowEngaged) {
+      this.held.clear()
+      this.usePressed = false
+    }
   }
 
   private onMouseMove = (e: MouseEvent) => {

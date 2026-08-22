@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { Hud } from './hud.ts'
 import { MessageLine } from './message.ts'
+import { Intermission } from './intermission.ts'
+import type { Tally } from './tally.ts'
 import type { PlayerHealth } from '../player/health.ts'
 import type { Arsenal } from '../weapons/arsenal.ts'
 import type { Expression } from './face.ts'
@@ -23,12 +25,14 @@ export class ScreenLayer {
 
   private readonly hud = new Hud()
   private readonly message = new MessageLine()
+  private readonly intermission = new Intermission()
   private readonly flash: THREE.Mesh
   private readonly flashMaterial: THREE.MeshBasicMaterial
 
   constructor() {
     this.scene.add(this.hud.mesh)
     this.scene.add(this.message.mesh)
+    this.scene.add(this.intermission.mesh)
 
     // Full-screen red wash, additive so it tints rather than covers -- an
     // opaque overlay at any real strength hides the thing that is hitting you,
@@ -62,9 +66,19 @@ export class ScreenLayer {
     this.flash.visible = this.flashMaterial.opacity > 0.002
   }
 
+  /** The level-complete tally, over everything else. */
+  showTally(levelName: string, tally: Tally): void {
+    this.intermission.show(levelName, tally)
+  }
+
+  hideTally(): void {
+    this.intermission.hide()
+  }
+
   dispose(): void {
     this.hud.dispose()
     this.message.dispose()
+    this.intermission.dispose()
     this.flash.geometry.dispose()
     this.flashMaterial.dispose()
   }
