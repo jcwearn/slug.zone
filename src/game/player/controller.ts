@@ -48,11 +48,9 @@ export function updatePlayer(player: PlayerState, level: Level, input: Input, dt
   const move = moveVector((a) => input.isDown(a))
   const speed = WALK_SPEED * (input.isDown('run') ? RUN_MULTIPLIER : 1)
 
-  const sin = Math.sin(player.yaw)
-  const cos = Math.cos(player.yaw)
-  // Forward is -z in three's convention with yaw about +y.
-  const dx = (move.x * cos - move.z * sin) * speed * dt
-  const dz = (move.x * sin + move.z * cos) * speed * dt
+  const delta = movementDelta(player.yaw, move.x, move.z)
+  const dx = delta.x * speed * dt
+  const dz = delta.z * speed * dt
 
   const before = { x: player.x, z: player.z }
   const after = moveWithCollision(level, player.x, player.z, dx, dz, PLAYER_RADIUS)
@@ -66,5 +64,35 @@ export function updatePlayer(player: PlayerState, level: Level, input: Input, dt
   } else {
     // Settle back to level rather than freezing mid-bob.
     player.eyeOffset += (0 - player.eyeOffset) * Math.min(1, dt * 8)
+  }
+}
+
+/**
+ * Turn local movement intent into a world-space delta on the ground plane.
+ *
+ * The camera is `rotation.set(pitch, yaw, 0, 'YXZ')`, and a three.js camera
+ * looks down its own -Z. So for a given yaw the basis is:
+ *
+ *   forward = (-sin(yaw), 0, -cos(yaw))
+ *   right   = ( cos(yaw), 0, -sin(yaw))
+ *
+ * Both z terms are negative, and that is the whole subtlety. This originally
+ * negated neither, which mirrors the movement about the x axis rather than
+ * simply reversing it -- so W was not merely backwards, it was a different
+ * wrong direction at every yaw, and the controls felt like they rotated
+ * independently of the camera.
+ *
+ * Pitch is deliberately ignored: looking at the floor should not slow you
+ * down or push you into it.
+ *
+ * movementDelta.test.ts checks this against three.js's own camera basis rather
+ * than against a re-derivation of it, so the two cannot drift apart.
+ */
+export function movementDelta(yaw: number, moveX: number, moveZ: number): { x: number; z: number } {
+  const sin = Math.sin(yaw)
+  const cos = Math.cos(yaw)
+  return {
+    x: moveX * cos - moveZ * sin,
+    z: -moveX * sin - moveZ * cos,
   }
 }
