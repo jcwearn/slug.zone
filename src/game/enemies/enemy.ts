@@ -91,7 +91,11 @@ export function updateEnemy(
   // can end up inside the player by the player backing into it, and something
   // has to resolve that. The player side only blocks, so this is the only
   // thing that does.
-  if (playerRadius > 0) {
+  //
+  // The living only. The player already treats corpses as walk-through, but
+  // this ran for every enemy, so walking into a dead slug shoved it along the
+  // floor -- the body slid ahead of you like a rug. A corpse is scenery.
+  if (playerRadius > 0 && isAlive(enemy.mind)) {
     const clear = pushOutOfDiscs(level, enemy.x, enemy.z, enemy.def.radius, [
       { x: playerX, z: playerZ, radius: playerRadius } satisfies Disc,
     ])
