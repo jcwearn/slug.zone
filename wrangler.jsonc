@@ -1,0 +1,11 @@
+{
+  // The Cloudflare Pages PROJECT name, which is not this repo's name -- the
+  // repo is slug.zone, the project is slug-zone.
+  //
+  // `wrangler pages deploy` CREATES a project that does not exist rather than
+  // failing, so a typo here would produce a second, empty project while the
+  // real site kept serving its last build and never updated again.
+  "name": "slug-zone",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-08-22",
+}
