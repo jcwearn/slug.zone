@@ -82,7 +82,7 @@ describe('damage states', () => {
       facePixels(b).find((q) => q.x === x && q.y === y)?.colour
     for (const [x, y] of [
       [8, 17],
-      [16, 19],
+      [16, 8],
       [10, 26],
     ] as const) {
       const tones = BUCKETS.map((b) => sample(b, x, y))
@@ -91,7 +91,7 @@ describe('damage states', () => {
   })
 
   it('shows no blood when unhurt and more as it worsens', () => {
-    const blood = (b: number) => countOf(b, '#a81e12') + countOf(b, '#7d1409')
+    const blood = (b: number) => countOf(b, '#a81e12') + countOf(b, '#6d1108')
     expect(blood(0)).toBe(0)
     expect(blood(1)).toBe(0)
     expect(blood(3)).toBeGreaterThan(blood(2))
@@ -99,7 +99,7 @@ describe('damage states', () => {
   })
 
   it('has open eyes while alive and closed eyes when dead', () => {
-    const white = '#f2ece0'
+    const white = '#f0e9dc'
     for (const bucket of [0, 1, 2]) {
       expect(countOf(bucket, white), `bucket ${bucket}`).toBeGreaterThan(0)
     }
@@ -115,11 +115,32 @@ describe('damage states', () => {
     }
   })
 
+  it('keeps the glasses across every state', () => {
+    // The single most identifying feature, and absent entirely from the first
+    // two attempts.
+    for (const bucket of BUCKETS) {
+      expect(countOf(bucket, '#8a7a54'), `frame, bucket ${bucket}`).toBeGreaterThan(20)
+      expect(countOf(bucket, '#b9b2a6'), `lenses, bucket ${bucket}`).toBeGreaterThan(10)
+    }
+  })
+
+  it('has no near-black ring around the head', () => {
+    // An outline flattens the portrait into a sticker. The hair is the
+    // silhouette; nothing darker than the hair should border it.
+    const darkest = '#301a10'
+    const outlineish = facePixels(0).filter((p) => p.colour === darkest)
+    // Brows only -- and brows live in the middle of the face, not its edge.
+    for (const p of outlineish) {
+      expect(p.y, 'dark pixels should be brows, not an outline').toBeGreaterThan(8)
+      expect(p.y).toBeLessThan(12)
+    }
+  })
+
   it('keeps the hair and moustache across every state', () => {
     // The likeness has to survive being hurt -- it is the same person.
     for (const bucket of BUCKETS) {
-      expect(countOf(bucket, '#2b1d12'), `hair, bucket ${bucket}`).toBeGreaterThan(30)
-      expect(countOf(bucket, '#2a1a0e'), `moustache, bucket ${bucket}`).toBeGreaterThan(25)
+      expect(countOf(bucket, '#3d2116'), `hair, bucket ${bucket}`).toBeGreaterThan(30)
+      expect(countOf(bucket, '#4a2a18'), `moustache, bucket ${bucket}`).toBeGreaterThan(25)
     }
   })
 })

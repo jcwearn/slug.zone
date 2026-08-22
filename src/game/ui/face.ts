@@ -6,16 +6,21 @@
  * fillRect calls is write-once -- nobody moves an eyebrow by adjusting rect
  * coordinates -- whereas this can be nudged a pixel at a time by eye.
  *
- * What makes a Doom or Duke-era portrait read as a specific person is SHADING,
- * not resolution. The first version of this had one skin tone and one hair
- * tone and looked like a generic person at any size. This one sculpts with
- * four skin values plus a deep shadow, three hair values, and a separate
- * stubble tone, so the brow ridge, cheekbones, nose and jaw all have form.
+ * Three things carry the likeness, and earlier versions got all three wrong:
  *
- * The likeness is drawn from a reference photo's features: heavy swept-back
- * dark hair greying at one temple, thick asymmetric brows, a full moustache
- * over a stubbled jaw, blue shirt. No image data is embedded here or anywhere
- * else in this repository -- the grid below is characters.
+ *  - NO outline. The hair is the silhouette. Ringing the head in near-black
+ *    flattens it into a sticker, which is what the first two attempts did.
+ *  - Curly hair, drawn with three auburn values scattered rather than a solid
+ *    block with a highlight edge.
+ *  - Round wire glasses, which are the single most identifying feature and
+ *    were missing entirely.
+ *
+ * Form comes from the tonal ramp, not the resolution: five skin values, three
+ * hair values, and a separate beard tone, so the brow ridge, nose and jaw are
+ * modelled rather than outlined.
+ *
+ * The likeness is drawn from reference imagery's features. No image data is
+ * embedded here or anywhere else in this repository -- the grid is characters.
  */
 
 export const FACE_WIDTH = 32
@@ -23,86 +28,77 @@ export const FACE_HEIGHT = 32
 
 /**
  * Legend:
- *   ' ' transparent   O outline
- *   1 hair dark       2 hair mid      3 hair highlight   g grey streak
- *   B brow            b brow edge
- *   d skin deep shadow  s skin shadow   m skin mid   h skin light
- *   W eye white       p pupil
- *   M moustache       u stubble        U stubble heavy
- *   T teeth           K mouth dark
- *   C shirt           L shirt highlight
+ *   ' ' transparent
+ *   1 hair dark    2 hair mid    3 hair highlight
+ *   B brow
+ *   d skin deep shadow   s skin shadow   m skin mid   h skin light
+ *   F glasses frame   G lens   W eye white   p pupil
+ *   M moustache    u beard    K mouth    T lower lip
+ *   C shirt
  */
 const BASE: string[] = [
-  '                                ',
-  '                                ',
-  '            OOOOOOO             ',
-  '         OOO1111111OOO          ',
-  '       OO111112222211OO         ',
-  '      O11111222223322g1O        ',
-  '     O1111222233333222g1O       ',
-  '     O111222233333322gg1O       ',
-  '    O11122OOOOOOOOOO22gg1O      ',
-  '    O112OhhhhhhhhhhhhO2g1O      ',
-  '    O11OhhhhhmmmmhhhhhO211O     ',
-  '    O1OhhBBBBhhhhhhhhhhO11O     ',
-  '    O1ObBBBBBhhhhBBBBbhO11O     ',
-  '    O1OhmmmmmhhhhhBBBBBhO1O     ',
-  '    OuOhWWpmhhssshhWWpmhO1O     ',
-  '    OuOhWWWmhhsssshWWWmhO1O     ',
-  '    OuOhmmmmhhssshhmmmmhO1O     ',
-  '    OuOhhhhhhhsssshhhhhhOuO     ',
-  '    OuuOhhhhhhsssshhhhhhOuO     ',
-  '     OuOhhhhhdsssdhhhhhhOuO     ',
-  '     OuOhhhhOdddddOhhhhhOuO     ',
-  '     OuuOhhOMMMMMMMOhhhOuuO     ',
-  '      OuOhMMMMMMMMMMMhOuuO      ',
-  '      OuuOMMMMMMMMMMMOuuO       ',
-  '      OuuOTTTTTTTTTTTOuuO       ',
-  '       OuOKKKKKKKKKKKOuO        ',
-  '       OuuUuuuuuuuuuuUuO        ',
-  '        OuuUUUUUUUUUuuO         ',
-  '         OOuuuUUUUuuOO          ',
-  '           OOOssssOO            ',
-  '        OCCCCCCCCCCCCCO         ',
-  '      OCCCCLLCCCCCCLLCCCO       ',
+  '          1121121121            ',
+  '       1121121121121121         ',
+  '      112112332112112112        ',
+  '     12112332112332112112       ',
+  '    1121123321123321121121      ',
+  '    1123321123321123321121      ',
+  '    112hhhhhhhhhhhhhhhh2112     ',
+  '    11hhhhhhhhhhhhhhhhhh211     ',
+  '    11hhhhhhhhhhhhhhhhhh211     ',
+  '    11hBBBBhhhhhhBBBBhh211      ',
+  '    11BBBBBBhhhhBBBBBBh211      ',
+  '    11hFFFFFhhhhFFFFFhh211      ',
+  '    1FFGGGGGFFFFGGGGGFF211      ',
+  '    1FGGWpGGFFFFGGWpGGF211      ',
+  '    1FGGWWGGhhhhGGWWGGF211      ',
+  '    11FFFFFhhssshhFFFFF211      ',
+  '    11hhhhhhhsssshhhhhh211      ',
+  '    11hhhhhhhsssshhhhhh211      ',
+  '     1hhhhhhhdsssdhhhhhh21      ',
+  '     1hhhhhhddsssddhhhhh21      ',
+  '     1hhhhMMMMhhMMMMhhhh21      ',
+  '     1hhMMMMMMMMMMMMMMhh21      ',
+  '     1hhMMMMMMMMMMMMMMhh21      ',
+  '     1uhhhKKKKKKKKKKhhhu21      ',
+  '     1uhhhhTTTTTTTThhhhu21      ',
+  '      uhhhhhhhhhhhhhhhhu2       ',
+  '      uuhhhhhhhhhhhhhhuu2       ',
+  '       uuhhhhhhhhhhhhuu         ',
+  '        uuuhhhhhhhhuuu          ',
+  '          usssssssssu           ',
+  '         ssssssssssss           ',
+  '       CCCCCCCCCCCCCCCC         ',
 ]
 
 const PALETTE: Record<string, string> = {
-  O: '#1a1008',
-  '1': '#2b1d12',
-  '2': '#412c1b',
-  '3': '#5a3d26',
-  g: '#8b8078',
-  B: '#241609',
-  b: '#33200e',
-  d: '#7a4526',
-  s: '#9c5c34',
-  m: '#b87446',
-  h: '#d1905c',
-  W: '#f2ece0',
-  p: '#160d06',
-  M: '#2a1a0e',
-  u: '#7d5334',
-  U: '#5f3d26',
-  T: '#e6dcc4',
-  K: '#38160f',
+  '1': '#3d2116',
+  '2': '#5c3421',
+  '3': '#7d4a2c',
+  B: '#301a10',
+  F: '#8a7a54',
+  G: '#b9b2a6',
+  W: '#f0e9dc',
+  p: '#1b1009',
+  M: '#4a2a18',
+  K: '#42180f',
+  T: '#a85f47',
   C: '#3f7fb5',
-  L: '#5c9ed4',
 }
 
 /**
- * Skin ramps per damage bucket, darkest to lightest.
+ * Skin and beard ramps per damage bucket, healthy through dead.
  *
- * The whole ramp shifts rather than one tone, so the face drains as a unit
- * instead of developing patches. Bucket 5 is grey -- the blood has gone.
+ * The whole ramp shifts together rather than one tone. Moving a single value
+ * leaves the face patchy -- a drained cheek beside an undrained jaw -- which
+ * reads as a rendering fault rather than as injury.
  */
 const RAMPS: Record<string, string[]> = {
-  d: ['#7a4526', '#744021', '#6d3a1e', '#63321a', '#552a17', '#43392f'],
-  s: ['#9c5c34', '#96552f', '#8d4d2a', '#7f4324', '#6d381f', '#584c41'],
-  m: ['#b87446', '#b06a3e', '#a55f36', '#96522e', '#814527', '#6b5e52'],
-  h: ['#d1905c', '#c98551', '#bd7847', '#ac683d', '#945634', '#7e7064'],
-  u: ['#7d5334', '#764c2f', '#6d442a', '#613a24', '#52301e', '#464038'],
-  U: ['#5f3d26', '#593722', '#52311e', '#492a1a', '#3d2215', '#39342d'],
+  d: ['#8a4a2c', '#834327', '#7a3c23', '#6d341e', '#5c2b19', '#4a4038'],
+  s: ['#a85e38', '#a15733', '#964e2d', '#874428', '#733921', '#5d5148'],
+  m: ['#c47a4c', '#bc7044', '#b0653c', '#a05834', '#8a4a2c', '#6f625a'],
+  h: ['#dda06a', '#d5945e', '#c98654', '#b8754a', '#9e613c', '#847870'],
+  u: ['#8a5c3e', '#835538', '#7a4d32', '#6d442c', '#5c3824', '#4e463e'],
 }
 
 export interface FacePixel {
@@ -112,19 +108,18 @@ export interface FacePixel {
 }
 
 const BLOOD = '#a81e12'
-const BLOOD_DARK = '#7d1409'
+const BLOOD_DARK = '#6d1108'
 
 /**
  * Pixels for one damage bucket, 0 (unhurt) through 5 (dead).
  *
- * Returned as data rather than drawn, so the whole portrait can be asserted in
- * a test -- bounds, palette coverage, that each bucket is distinguishable,
- * that the eyes close on death -- with no canvas involved.
+ * Returned as data rather than drawn, so the portrait can be asserted in a
+ * test -- bounds, no holes, tonal range, each bucket distinguishable, eyes
+ * closing on death -- with no canvas involved.
  */
 export function facePixels(bucket: number): FacePixel[] {
   const clamped = Math.max(0, Math.min(5, Math.floor(bucket)))
   const dead = clamped >= 5
-  const hurt = clamped >= 3
   const pixels: FacePixel[] = []
 
   for (let y = 0; y < FACE_HEIGHT; y++) {
@@ -133,16 +128,10 @@ export function facePixels(bucket: number): FacePixel[] {
       const ch = row[x]
       if (ch === ' ') continue
 
-      // Eyes shut when dead. Drawn as a lid in the skin tone rather than
-      // simply omitted, or the sockets become holes in the head.
+      // Behind the lenses the eyes go dark when dead. Removing them would
+      // leave holes in the head, which is a worse expression entirely.
       if (dead && (ch === 'W' || ch === 'p')) {
-        pixels.push({ x, y, colour: RAMPS.s[clamped] })
-        continue
-      }
-
-      // Squinting: the whites narrow to a slit on the lower row.
-      if (hurt && !dead && ch === 'W' && y === 15) {
-        pixels.push({ x, y, colour: RAMPS.m[clamped] })
+        pixels.push({ x, y, colour: PALETTE.B })
         continue
       }
 
@@ -151,28 +140,22 @@ export function facePixels(bucket: number): FacePixel[] {
     }
   }
 
-  if (dead) {
-    // A closed lid line across each eye.
-    for (const ex of [8, 19]) {
-      for (let i = 0; i < 5; i++) pixels.push({ x: ex + i, y: 15, colour: PALETTE.B })
-    }
-  }
-
-  // Blood, from bucket 2, spreading further down the face each step.
+  // Blood runs from the hairline down the face, further with each bucket.
   if (clamped >= 2) {
-    for (let i = 0; i < 3 + clamped * 2; i++) {
-      pixels.push({ x: 9, y: 9 + i, colour: i > 3 ? BLOOD_DARK : BLOOD })
+    for (let i = 0; i < 4 + clamped * 2; i++) {
+      pixels.push({ x: 8, y: 7 + i, colour: i > 4 ? BLOOD_DARK : BLOOD })
     }
+    pixels.push({ x: 9, y: 7, colour: BLOOD })
   }
   if (clamped >= 3) {
     for (let i = 0; i < clamped * 2; i++) {
-      pixels.push({ x: 22, y: 11 + i, colour: i > 2 ? BLOOD_DARK : BLOOD })
+      pixels.push({ x: 21, y: 8 + i, colour: i > 3 ? BLOOD_DARK : BLOOD })
     }
-    pixels.push({ x: 23, y: 11, colour: BLOOD })
+    pixels.push({ x: 20, y: 8, colour: BLOOD })
   }
   if (clamped >= 4) {
-    for (let i = 0; i < 6; i++) pixels.push({ x: 12 + i, y: 26, colour: BLOOD_DARK })
-    for (let i = 0; i < 4; i++) pixels.push({ x: 14 + i, y: 27, colour: BLOOD })
+    for (let i = 0; i < 6; i++) pixels.push({ x: 12 + i, y: 25, colour: BLOOD_DARK })
+    for (let i = 0; i < 4; i++) pixels.push({ x: 13 + i, y: 26, colour: BLOOD })
   }
 
   return pixels
