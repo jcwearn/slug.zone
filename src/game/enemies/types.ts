@@ -33,4 +33,12 @@ export interface EnemyDef {
   reactionTime: number
   color: number
   darkColor: number
+  /**
+   * Ranged attack, or null for a melee enemy.
+   *
+   * Melee damage lands the instant the wind-up ends. Ranged damage is carried
+   * by a glob that has to travel and can be dodged -- which is what makes a
+   * ranged enemy a different problem rather than a melee one with more reach.
+   */
+  projectile: { speed: number; radius: number } | null
 }

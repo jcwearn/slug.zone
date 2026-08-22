@@ -22,6 +22,8 @@ import {
 import { buildEnemyView, poseEnemy, type EnemyView } from './enemies/render.ts'
 import { damage as damageEnemy, isAlive } from './enemies/fsm.ts'
 import { nearestHit, verticalAutoAim } from './enemies/hitscan.ts'
+import { Globs } from './enemies/projectiles.ts'
+import { GlobRenderer } from './enemies/globrender.ts'
 import {
   addAmmo,
   createArsenal,
@@ -45,6 +47,8 @@ import {
   playDeath,
   playHurt,
   playSaltBlast,
+  playSplat,
+  playSpit,
   playSwitch,
   unlockAudio,
 } from './audio/sfx.ts'
@@ -72,6 +76,10 @@ view.scene.add(meshes.group)
 
 const tracers = new Tracers()
 view.scene.add(tracers.mesh)
+
+const globs = new Globs()
+const globRenderer = new GlobRenderer(globs.items.length)
+view.scene.add(globRenderer.mesh)
 
 // Pickups are still inert markers; they become real in G5.
 const markerGeo = new THREE.IcosahedronGeometry(0.5, 0)
@@ -147,6 +155,7 @@ function restart(): void {
     void spawn
   }
 
+  globs.clear()
   keys.clear()
   deathScreen?.classList.add('hidden')
 }
@@ -315,9 +324,29 @@ new Loop({
       // The strike lands at the end of the wind-up, and only if the player is
       // still in range -- the FSM already decided that.
       if (entry.enemy.mind.didStrike) {
-        const result = damagePlayer(health, entry.enemy.def.damage)
-        if (result.died) playDeath()
-        else if (result.applied) playHurt(rng())
+        const ranged = entry.enemy.def.projectile
+        if (ranged) {
+          // Launched from the creature's own height toward the player's chest,
+          // so the arc is visible against the floor rather than skimming it.
+          const glob = globs.spawn(
+            entry.enemy.x,
+            entry.enemy.z,
+            entry.enemy.def.height * level.wallHeight * 0.8,
+            player.x,
+            player.z,
+            space.eyeY(EYE_HEIGHT) - 0.35,
+            ranged.speed,
+            entry.enemy.def.damage,
+          )
+          if (glob) {
+            glob.radius = ranged.radius
+            playSpit(rng())
+          }
+        } else {
+          const result = damagePlayer(health, entry.enemy.def.damage)
+          if (result.died) playDeath()
+          else if (result.applied) playHurt(rng())
+        }
       }
     }
 
@@ -327,6 +356,31 @@ new Loop({
       live.map((l) => l.enemy),
       level,
     )
+
+    for (const outcome of globs.step(
+      level,
+      dt,
+      player.x,
+      player.z,
+      PLAYER_RADIUS,
+      level.wallHeight,
+      space.floorY,
+      // A little above the eye, so a glob aimed at your face connects rather
+      // than clipping past the top of the hitbox.
+      space.eyeY(EYE_HEIGHT + player.eyeOffset) + 0.25,
+    )) {
+      const worldX = outcome.kind === 'none' ? 0 : outcome.x * s
+      const worldZ = outcome.kind === 'none' ? 0 : outcome.z * s
+      if (outcome.kind === 'hit') {
+        const result = damagePlayer(health, outcome.damage)
+        if (result.died) playDeath()
+        else if (result.applied) playHurt(rng())
+        tracers.emitImpact(worldX, outcome.worldY, worldZ, 0, 0, rng)
+      } else if (outcome.kind === 'wall' || outcome.kind === 'expired') {
+        tracers.emitImpact(worldX, outcome.worldY, worldZ, 0, 0, rng)
+        playSplat()
+      }
+    }
 
     tickArsenal(arsenal, dt)
     if (lastPhase === 'lowering' && arsenal.phase === 'raising') playSwitch()
@@ -338,6 +392,7 @@ new Loop({
     screen.update(health, arsenal, keys)
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)
+    globRenderer.sync(globs, s)
   },
 
   render() {

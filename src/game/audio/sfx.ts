@@ -320,3 +320,48 @@ export function playDeath(): void {
   osc.start(now)
   osc.stop(now + 1.35)
 }
+
+/** A Spitter launching: a wet upward hock. */
+export function playSpit(variation = 0): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const src = noiseSource(ac)
+  if (!src) return
+  const filter = ac.createBiquadFilter()
+  filter.type = 'bandpass'
+  filter.Q.value = 3
+  filter.frequency.setValueAtTime(400 + variation * 120, now)
+  filter.frequency.exponentialRampToValueAtTime(1800, now + 0.14)
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.34, now + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
+
+  src.connect(filter).connect(gain).connect(out)
+  src.start(now)
+  src.stop(now + 0.2)
+}
+
+/** Acid landing on stone: a short hiss. */
+export function playSplat(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const src = noiseSource(ac)
+  if (!src) return
+  const filter = ac.createBiquadFilter()
+  filter.type = 'highpass'
+  filter.frequency.value = 2200
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.2, now)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+
+  src.connect(filter).connect(gain).connect(out)
+  src.start(now)
+  src.stop(now + 0.24)
+}

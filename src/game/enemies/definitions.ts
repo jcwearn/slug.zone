@@ -31,6 +31,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     reactionTime: 0.15,
     color: SLUG_BROWN,
     darkColor: SLUG_DARK,
+    projectile: null,
   },
 
   spitter: {
@@ -55,6 +56,9 @@ export const ENEMIES: Record<string, EnemyDef> = {
     reactionTime: 0.35,
     color: 0x7a9c3a,
     darkColor: 0x3c4a1c,
+    // Slow enough to see coming and step out of. A Spitter that cannot be
+    // dodged is just a Grub that hits you from across the room.
+    projectile: { speed: 7.5, radius: 0.18 },
   },
 }
 
