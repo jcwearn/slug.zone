@@ -1,4 +1,9 @@
-import { hasLineOfSight, moveWithCollision } from '../engine/collision.ts'
+import {
+  hasLineOfSight,
+  moveWithCollision,
+  pushOutOfDiscs,
+  type Disc,
+} from '../engine/collision.ts'
 import { angleDelta } from '../engine/math.ts'
 import type { Level } from '../world/level.ts'
 import { ENEMIES } from './definitions.ts'
@@ -40,6 +45,8 @@ export function updateEnemy(
   playerX: number,
   playerZ: number,
   dt: number,
+  /** The player's own footprint, so slugs stop short instead of standing in it. */
+  playerRadius = 0,
 ): void {
   enemy.age += dt
 
@@ -78,6 +85,18 @@ export function updateEnemy(
     )
     enemy.x = moved.x
     enemy.z = moved.z
+  }
+
+  // Push out of the player rather than merely stopping short of them: a slug
+  // can end up inside the player by the player backing into it, and something
+  // has to resolve that. The player side only blocks, so this is the only
+  // thing that does.
+  if (playerRadius > 0) {
+    const clear = pushOutOfDiscs(level, enemy.x, enemy.z, enemy.def.radius, [
+      { x: playerX, z: playerZ, radius: playerRadius } satisfies Disc,
+    ])
+    enemy.x = clear.x
+    enemy.z = clear.z
   }
 }
 
@@ -123,26 +142,35 @@ export function separateEnemies(enemies: Enemy[], level: Level): void {
         const a = crowd[i]
         const b = crowd[j]
 
-        let dx = b.x - a.x
-        let dz = b.z - a.z
-        let distance = Math.hypot(dx, dz)
+        const dx = b.x - a.x
+        const dz = b.z - a.z
+        const distance = Math.hypot(dx, dz)
         const minimum = a.def.radius + b.def.radius
         if (distance >= minimum) continue
 
+        // Direction and magnitude separately. Substituting a distance of 1 for
+        // the coincident case and then deriving the push from it gives a
+        // NEGATIVE push, so two slugs standing in exactly the same spot pulled
+        // together rather than apart -- and still ended up a nonzero distance
+        // from each other, which is why the first version of this test passed.
+        let nx: number
+        let nz: number
         if (distance < 1e-6) {
-          // Exactly coincident, which happens when two spawn on the same cell.
-          // The direction is derived from the pair's indices rather than
-          // randomly, so the result is reproducible -- the golden angle just
-          // keeps successive pairs from all choosing the same axis.
+          // Derived from the pair's indices rather than randomly, so the result
+          // is reproducible. The golden angle just stops successive pairs all
+          // choosing the same axis.
           const angle = (i * crowd.length + j) * 2.399963229728653
-          dx = Math.cos(angle)
-          dz = Math.sin(angle)
-          distance = 1
+          nx = Math.cos(angle)
+          nz = Math.sin(angle)
+        } else {
+          nx = dx / distance
+          nz = dz / distance
         }
 
-        const push = (minimum - distance) / 2
-        const nx = dx / distance
-        const nz = dz / distance
+        // Half the overlap each, plus a hair so they end up clear rather than
+        // exactly touching -- on the boundary the overlap test still fires and
+        // the pair gets pushed again every frame.
+        const push = (minimum - distance) / 2 + 1e-3
 
         // Through moveWithCollision, so separating never pushes anyone into a
         // wall -- which would undo the whole reason enemies have collision.

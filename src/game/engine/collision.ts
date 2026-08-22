@@ -238,3 +238,123 @@ export function hasLineOfSight(
   const hit = raycast(level, ax, az, dx, dz, distance)
   return hit === null
 }
+
+/** Clearance left between bodies after a push, so they end up properly apart. */
+const SEPARATION_MARGIN = 1e-3
+
+/** A circular obstacle in the horizontal plane: a creature, or the player. */
+export interface Disc {
+  x: number
+  z: number
+  radius: number
+}
+
+/** Whether a circle at (x,z) overlaps any of the discs. */
+export function overlapsDisc(x: number, z: number, radius: number, discs: Iterable<Disc>): boolean {
+  for (const disc of discs) {
+    const dx = x - disc.x
+    const dz = z - disc.z
+    const reach = radius + disc.radius
+    if (dx * dx + dz * dz < reach * reach) return true
+  }
+  return false
+}
+
+/**
+ * Move from `from` to `to`, blocked by discs, sliding along them.
+ *
+ * Blocking rather than pushing, and it matters which. Two bodies that each
+ * shove the other apart end up separated by twice the overlap every frame, so
+ * brushing against a slug flings you off it. Blocking just stops you, and the
+ * axis-at-a-time fallback is what turns "stopped" into "slid around", exactly
+ * as the wall collision does.
+ *
+ * Order matters on the diagonal: the axis carrying more of the movement is
+ * tried first, so a glancing approach keeps the component that was doing the
+ * work.
+ */
+export function slideAlongDiscs(
+  fromX: number,
+  fromZ: number,
+  toX: number,
+  toZ: number,
+  radius: number,
+  discs: Iterable<Disc>,
+): { x: number; z: number; blocked: boolean } {
+  const list = [...discs]
+  if (list.length === 0) return { x: toX, z: toZ, blocked: false }
+
+  if (!overlapsDisc(toX, toZ, radius, list)) return { x: toX, z: toZ, blocked: false }
+
+  // Already inside something before moving -- an enemy walked onto us, or one
+  // spawned here. Refusing to move would trap the player inside a slug, so let
+  // the move through and let the enemy's own push-out resolve it.
+  if (overlapsDisc(fromX, fromZ, radius, list)) {
+    return { x: toX, z: toZ, blocked: false }
+  }
+
+  const preferX = Math.abs(toX - fromX) >= Math.abs(toZ - fromZ)
+  const first = preferX ? { x: toX, z: fromZ } : { x: fromX, z: toZ }
+  const second = preferX ? { x: fromX, z: toZ } : { x: toX, z: fromZ }
+
+  if (!overlapsDisc(first.x, first.z, radius, list)) {
+    return { x: first.x, z: first.z, blocked: true }
+  }
+  if (!overlapsDisc(second.x, second.z, radius, list)) {
+    return { x: second.x, z: second.z, blocked: true }
+  }
+  return { x: fromX, z: fromZ, blocked: true }
+}
+
+/**
+ * Push a circle out of the discs it overlaps, without leaving the level.
+ *
+ * Used for the enemy side, where a slug that has ended up on top of the player
+ * -- because the player walked backwards into it, or it spawned there -- has to
+ * be moved out rather than merely stopped.
+ */
+export function pushOutOfDiscs(
+  level: Level,
+  x: number,
+  z: number,
+  radius: number,
+  discs: Iterable<Disc>,
+): { x: number; z: number } {
+  let px = x
+  let pz = z
+
+  for (const disc of discs) {
+    const dx = px - disc.x
+    const dz = pz - disc.z
+    const distance = Math.hypot(dx, dz)
+    const reach = radius + disc.radius
+    if (distance >= reach) continue
+
+    // Direction and magnitude computed separately, deliberately. Folding the
+    // coincident fallback into `distance` and then deriving the push from it
+    // makes the push NEGATIVE -- reach minus the substituted distance -- so
+    // two bodies in exactly the same spot pull together instead of apart.
+    let nx: number
+    let nz: number
+    if (distance < 1e-6) {
+      // The direction has to come from somewhere deterministic, or the same
+      // situation resolves differently on every run.
+      const angle = (disc.x * 12.9898 + disc.z * 78.233) % (Math.PI * 2)
+      nx = Math.cos(angle)
+      nz = Math.sin(angle)
+    } else {
+      nx = dx / distance
+      nz = dz / distance
+    }
+
+    // A hair beyond touching. Pushing exactly `reach` lands on the boundary,
+    // where floating point leaves the body a fraction inside and the overlap
+    // test still reports a hit -- so it gets pushed again every single frame.
+    const push = reach - distance + SEPARATION_MARGIN
+    const moved = moveWithCollision(level, px, pz, nx * push, nz * push, radius)
+    px = moved.x
+    pz = moved.z
+  }
+
+  return { x: px, z: pz }
+}

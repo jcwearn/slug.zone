@@ -30,14 +30,21 @@ describe('separateEnemies', () => {
   })
 
   it('separates slugs standing in exactly the same spot', () => {
-    // Division by zero if the direction is taken from the difference vector,
-    // which is exactly zero here.
+    // Two traps here. The difference vector is exactly zero, so the direction
+    // cannot come from it -- and if the coincident fallback is folded into
+    // `distance` before the push is computed, the push comes out NEGATIVE and
+    // the pair pulls together.
+    //
+    // The first version of this asserted only `gap > 0`, which a negative push
+    // satisfies perfectly well: they still end up a nonzero distance apart,
+    // just on the wrong sides of each other and still overlapping. It has to
+    // be the full minimum gap.
     const a = spawnEnemy('grub', 5.5, 1.5)
     const b = spawnEnemy('grub', 5.5, 1.5)
     for (let i = 0; i < 10; i++) separateEnemies([a, b], level)
     expect(Number.isFinite(a.x)).toBe(true)
     expect(Number.isFinite(b.x)).toBe(true)
-    expect(gap(a, b)).toBeGreaterThan(0)
+    expect(gap(a, b)).toBeGreaterThanOrEqual(minimumGap(a, b) - 1e-6)
   })
 
   it('is deterministic, so a coincident pair resolves the same way every time', () => {

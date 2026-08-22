@@ -3,7 +3,7 @@ import { RetroRenderer } from './engine/renderer.ts'
 import { Loop } from './engine/loop.ts'
 import { Input } from './engine/input.ts'
 import { mulberry32 } from './engine/math.ts'
-import { raycast } from './engine/collision.ts'
+import { PLAYER_RADIUS, raycast, type Disc } from './engine/collision.ts'
 import { parseLevel } from './world/level.ts'
 import { worldSpace } from './world/space.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
@@ -226,7 +226,13 @@ new Loop({
     }
 
     const before = { x: player.x, z: player.z }
-    updatePlayer(player, level, input, dt)
+    // Live slugs only -- corpses are scenery you walk over.
+    const blockers: Disc[] = targetable(live.map((l) => l.enemy)).map((e) => ({
+      x: e.x,
+      z: e.z,
+      radius: e.def.radius,
+    }))
+    updatePlayer(player, level, input, dt, blockers)
     const moving = Math.hypot(player.x - before.x, player.z - before.z) > 1e-5
 
     for (const slot of input.consumeSlots()) selectSlot(arsenal, slot)
@@ -249,7 +255,7 @@ new Loop({
     }
 
     for (const entry of live) {
-      updateEnemy(entry.enemy, level, player.x, player.z, dt)
+      updateEnemy(entry.enemy, level, player.x, player.z, dt, PLAYER_RADIUS)
       const nowIdle = entry.enemy.mind.state === 'idle'
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
