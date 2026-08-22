@@ -96,3 +96,64 @@ export function enemyCylinder(enemy: Enemy, cellSize: number, roomHeight: number
 export function targetable(enemies: Enemy[]): Enemy[] {
   return enemies.filter((e) => isAlive(e.mind))
 }
+
+/**
+ * Push overlapping enemies apart.
+ *
+ * They collide with walls but not with each other, so several chasing the same
+ * player converge on the same point and stack into one composite slug. This is
+ * the cheap fix -- resolve overlaps after everyone has moved -- rather than
+ * steering, which is what a flocking model would do and is far more machinery
+ * than a corridor shooter needs.
+ *
+ * Two passes. One leaves a chain of three or more still overlapping, because
+ * pushing A off B can shove it into C; a second pass settles almost all of it,
+ * and anything left resolves on the next tick anyway.
+ */
+const SEPARATION_PASSES = 2
+
+export function separateEnemies(enemies: Enemy[], level: Level): void {
+  // Corpses do not shove. Walking over a dead slug is fine and Doom-like;
+  // being blocked by one is not.
+  const crowd = enemies.filter((e) => isAlive(e.mind))
+
+  for (let pass = 0; pass < SEPARATION_PASSES; pass++) {
+    for (let i = 0; i < crowd.length; i++) {
+      for (let j = i + 1; j < crowd.length; j++) {
+        const a = crowd[i]
+        const b = crowd[j]
+
+        let dx = b.x - a.x
+        let dz = b.z - a.z
+        let distance = Math.hypot(dx, dz)
+        const minimum = a.def.radius + b.def.radius
+        if (distance >= minimum) continue
+
+        if (distance < 1e-6) {
+          // Exactly coincident, which happens when two spawn on the same cell.
+          // The direction is derived from the pair's indices rather than
+          // randomly, so the result is reproducible -- the golden angle just
+          // keeps successive pairs from all choosing the same axis.
+          const angle = (i * crowd.length + j) * 2.399963229728653
+          dx = Math.cos(angle)
+          dz = Math.sin(angle)
+          distance = 1
+        }
+
+        const push = (minimum - distance) / 2
+        const nx = dx / distance
+        const nz = dz / distance
+
+        // Through moveWithCollision, so separating never pushes anyone into a
+        // wall -- which would undo the whole reason enemies have collision.
+        const movedA = moveWithCollision(level, a.x, a.z, -nx * push, -nz * push, a.def.radius)
+        a.x = movedA.x
+        a.z = movedA.z
+
+        const movedB = moveWithCollision(level, b.x, b.z, nx * push, nz * push, b.def.radius)
+        b.x = movedB.x
+        b.z = movedB.z
+      }
+    }
+  }
+}

@@ -9,7 +9,14 @@ import { worldSpace } from './world/space.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
-import { spawnEnemy, updateEnemy, enemyCylinder, targetable, type Enemy } from './enemies/enemy.ts'
+import {
+  enemyCylinder,
+  separateEnemies,
+  spawnEnemy,
+  targetable,
+  updateEnemy,
+  type Enemy,
+} from './enemies/enemy.ts'
 import { buildEnemyView, poseEnemy, type EnemyView } from './enemies/render.ts'
 import { damage as damageEnemy, isAlive } from './enemies/fsm.ts'
 import { nearestHit, verticalAutoAim } from './enemies/hitscan.ts'
@@ -247,6 +254,13 @@ new Loop({
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
     }
+
+    // After everyone has moved, so the push resolves the positions they
+    // actually ended up in rather than the ones they started from.
+    separateEnemies(
+      live.map((l) => l.enemy),
+      level,
+    )
 
     tickArsenal(arsenal, dt)
     if (lastPhase === 'lowering' && arsenal.phase === 'raising') playSwitch()
