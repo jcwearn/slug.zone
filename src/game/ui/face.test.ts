@@ -98,12 +98,14 @@ describe('damage states', () => {
     expect(blood(4)).toBeGreaterThan(blood(3))
   })
 
-  it('has open eyes while alive and closed eyes when dead', () => {
-    const white = '#f0e9dc'
-    for (const bucket of [0, 1, 2]) {
-      expect(countOf(bucket, white), `bucket ${bucket}`).toBeGreaterThan(0)
+  it('has visible pupils while alive and shut eyes when dead', () => {
+    // Pupils behind pale lenses rather than cartoon sclera -- big white
+    // eyeballs are most of what made the earlier attempts read as cheesy.
+    const pupil = '#1d1209'
+    for (const bucket of [0, 1, 2, 3, 4]) {
+      expect(countOf(bucket, pupil), `bucket ${bucket}`).toBeGreaterThan(0)
     }
-    expect(countOf(5, white)).toBe(0)
+    expect(countOf(5, pupil)).toBe(0)
   })
 
   it('draws the closed lids inside the portrait when dead', () => {
@@ -119,28 +121,49 @@ describe('damage states', () => {
     // The single most identifying feature, and absent entirely from the first
     // two attempts.
     for (const bucket of BUCKETS) {
-      expect(countOf(bucket, '#8a7a54'), `frame, bucket ${bucket}`).toBeGreaterThan(20)
-      expect(countOf(bucket, '#b9b2a6'), `lenses, bucket ${bucket}`).toBeGreaterThan(10)
+      expect(countOf(bucket, '#8d7f5e'), `frame, bucket ${bucket}`).toBeGreaterThan(20)
+      expect(countOf(bucket, '#c2bcae'), `lenses, bucket ${bucket}`).toBeGreaterThan(10)
     }
   })
 
   it('has no near-black ring around the head', () => {
     // An outline flattens the portrait into a sticker. The hair is the
-    // silhouette; nothing darker than the hair should border it.
-    const darkest = '#301a10'
-    const outlineish = facePixels(0).filter((p) => p.colour === darkest)
-    // Brows only -- and brows live in the middle of the face, not its edge.
-    for (const p of outlineish) {
+    // silhouette; the darkest tone belongs to the brows, which sit in the
+    // middle of the face rather than around its edge.
+    const darkest = '#2c1b11'
+    for (const p of facePixels(0).filter((q) => q.colour === darkest)) {
       expect(p.y, 'dark pixels should be brows, not an outline').toBeGreaterThan(8)
       expect(p.y).toBeLessThan(12)
+    }
+  })
+
+  it('fills the frame rather than floating in the middle of it', () => {
+    // The version before this was a narrow head in a 32px box, which wastes
+    // half the portrait and is a large part of why it looked like a doll.
+    const pixels = facePixels(0)
+    const xs = pixels.map((p) => p.x)
+    const ys = pixels.map((p) => p.y)
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThanOrEqual(24)
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThanOrEqual(28)
+  })
+
+  it('is horizontally centred', () => {
+    for (let y = 0; y < FACE_HEIGHT; y++) {
+      const xs = facePixels(0)
+        .filter((p) => p.y === y)
+        .map((p) => p.x)
+      if (xs.length === 0) continue
+      const left = Math.min(...xs)
+      const right = FACE_WIDTH - 1 - Math.max(...xs)
+      expect(Math.abs(left - right), `row ${y} is off-centre`).toBeLessThanOrEqual(1)
     }
   })
 
   it('keeps the hair and moustache across every state', () => {
     // The likeness has to survive being hurt -- it is the same person.
     for (const bucket of BUCKETS) {
-      expect(countOf(bucket, '#3d2116'), `hair, bucket ${bucket}`).toBeGreaterThan(30)
-      expect(countOf(bucket, '#4a2a18'), `moustache, bucket ${bucket}`).toBeGreaterThan(25)
+      expect(countOf(bucket, '#3a2418'), `hair, bucket ${bucket}`).toBeGreaterThan(30)
+      expect(countOf(bucket, '#4b2f1d'), `moustache, bucket ${bucket}`).toBeGreaterThan(25)
     }
   })
 })
