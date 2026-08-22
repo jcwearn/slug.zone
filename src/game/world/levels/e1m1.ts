@@ -44,9 +44,15 @@ const level: LevelSource = {
   ],
   entities: [
     { type: 'player', x: 1.5, z: 1.5, angle: 0 },
-    { type: 'grub', x: 8.5, z: 5.5 },
-    { type: 'grub', x: 15.5, z: 3.5 },
-    { type: 'spitter', x: 12.5, z: 13.5 },
+
+    // Clustered near the start on purpose, for now. Spread across the map they
+    // were a scavenger hunt rather than a fight, and there is no HUD, automap
+    // or kill counter yet to tell you how many are left or where. They get
+    // distributed properly once G5 lands the HUD.
+    { type: 'grub', x: 4.5, z: 1.5 },
+    { type: 'grub', x: 6.5, z: 1.5 },
+    { type: 'grub', x: 3.5, z: 5.5 },
+    { type: 'spitter', x: 7.5, z: 3.5 },
     { type: 'pickup', item: 'grinder', x: 5.5, z: 11.5 },
     { type: 'pickup', item: 'health', x: 14.5, z: 4.5 },
     { type: 'pickup', item: 'redkey', x: 3.5, z: 13.5 },

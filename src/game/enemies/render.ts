@@ -104,12 +104,19 @@ export function poseEnemy(view: EnemyView, enemy: Enemy, cellSize: number, roomH
   view.group.scale.setScalar(scale)
 
   if (mind.state === 'dying' || mind.state === 'dead') {
-    // Collapse and flatten. `timer` counts down through dyingTime, so this
+    // Deflate into a puddle. `timer` counts down through dyingTime, so this
     // runs 0 -> 1 and then stays put once dead.
+    //
+    // Explicitly NO roll on Z. Rolling a flattened body about its own base
+    // tips one end below y=0, and since the floor is a plane at exactly 0 the
+    // corpse slices diagonally through it. Salted slugs shrivel rather than
+    // topple anyway, so spreading outward while collapsing downward is both
+    // the correct look and the one that cannot clip.
     const t =
       mind.state === 'dead' ? 1 : 1 - Math.max(0, mind.timer) / Math.max(def.dyingTime, 1e-6)
-    view.body.scale.set(1 + t * 0.5, Math.max(0.12, 1 - t * 0.88), 1 + t * 0.35)
-    view.body.rotation.z = t * 0.5
+    const spread = 1 + t * 0.8
+    view.body.scale.set(spread, Math.max(0.1, 1 - t * 0.9), spread * 1.1)
+    view.body.rotation.z = 0
     view.body.position.y = 0
     return
   }
