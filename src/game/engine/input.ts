@@ -36,6 +36,11 @@ export class Input {
   /** Radians of look per pixel of mouse movement. */
   sensitivity = 0.0022
 
+  /** Weapon slots pressed since the last consume, in order. */
+  private readonly slotQueue: number[] = []
+  /** Net wheel notches since the last consume. */
+  private wheelDelta = 0
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly onEngage?: () => void,
@@ -50,6 +55,7 @@ export class Input {
     // is supposed to engage pointer lock.
     window.addEventListener('mousedown', this.onMouseDown)
     window.addEventListener('mouseup', this.onMouseUp)
+    window.addEventListener('wheel', this.onWheel, { passive: true })
   }
 
   get isEngaged() {
@@ -60,6 +66,18 @@ export class Input {
     return this.held.has(action)
   }
 
+  /**
+   * Drop the fire flag without waiting for mouseup.
+   *
+   * Semi-automatic weapons call this after a shot so holding the button does
+   * not autofire. Without it, `isDown('fire')` stays true for as long as the
+   * button is held and the only thing limiting the rate is the cooldown --
+   * which turns every weapon into a full-auto one.
+   */
+  releaseFire(): void {
+    this.held.delete('fire')
+  }
+
   /** Returns look deltas accumulated since the last call, and resets them. */
   consumeLook(): { yaw: number; pitch: number } {
     const out = { yaw: this.yawDelta, pitch: this.pitchDelta }
@@ -68,7 +86,33 @@ export class Input {
     return out
   }
 
+  /** Weapon slot keys pressed since the last call, oldest first. */
+  consumeSlots(): number[] {
+    return this.slotQueue.splice(0, this.slotQueue.length)
+  }
+
+  /** Net weapon-cycle notches since the last call. */
+  consumeWheel(): number {
+    const out = this.wheelDelta
+    this.wheelDelta = 0
+    return out
+  }
+
+  private onWheel = (e: WheelEvent) => {
+    if (!this.engaged) return
+    this.wheelDelta += e.deltaY > 0 ? 1 : -1
+  }
+
   private onKeyDown = (e: KeyboardEvent) => {
+    // Digit1..Digit9 select a weapon slot. Queued rather than held, because a
+    // tap between two frames must not be lost.
+    const digit = /^Digit([1-9])$/.exec(e.code)
+    if (digit) {
+      e.preventDefault()
+      this.slotQueue.push(Number(digit[1]))
+      return
+    }
+
     const action = BINDINGS[e.code]
     if (!action) return
     // Space and the arrows scroll the page otherwise, which fights the canvas.
@@ -88,6 +132,8 @@ export class Input {
    */
   private onBlur = () => {
     this.held.clear()
+    this.slotQueue.length = 0
+    this.wheelDelta = 0
   }
 
   private onMouseDown = () => {
@@ -123,6 +169,7 @@ export class Input {
     document.removeEventListener('mousemove', this.onMouseMove)
     window.removeEventListener('mousedown', this.onMouseDown)
     window.removeEventListener('mouseup', this.onMouseUp)
+    window.removeEventListener('wheel', this.onWheel)
   }
 }
 

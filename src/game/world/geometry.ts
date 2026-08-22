@@ -15,7 +15,7 @@ import { texture } from '../engine/textures.ts'
  * also running enemies.
  */
 
-interface FaceBatch {
+export interface FaceBatch {
   positions: number[]
   normals: number[]
   uvs: number[]
@@ -44,7 +44,14 @@ export interface LevelMeshes {
   dispose(): void
 }
 
-export function buildLevelMeshes(level: Level): LevelMeshes {
+/**
+ * Vertex data only -- no meshes, no materials, no textures.
+ *
+ * Split out so the geometry can be asserted in a plain node test. Textures are
+ * drawn to a canvas, so anything touching them needs a DOM, and needing a DOM
+ * to check that a wall is four units tall is the wrong trade.
+ */
+export function buildLevelBuffers(level: Level): Map<string, FaceBatch> {
   const s = level.cellSize
   const h = level.wallHeight
   const batches = new Map<string, FaceBatch>()
@@ -162,6 +169,11 @@ export function buildLevelMeshes(level: Level): LevelMeshes {
     }
   }
 
+  return batches
+}
+
+export function buildLevelMeshes(level: Level): LevelMeshes {
+  const batches = buildLevelBuffers(level)
   const group = new THREE.Group()
   const disposables: { dispose(): void }[] = []
 
