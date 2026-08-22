@@ -40,6 +40,38 @@ export function setSfxVolume(value: number): void {
 }
 
 /**
+ * The music's own bus, hung straight off the destination rather than off the
+ * effects master.
+ *
+ * Separate so the two can be balanced -- and muted -- independently. Routing
+ * music through `master` would mean turning the effects down also turned the
+ * soundtrack down, and the reason anyone reaches for that control is usually
+ * the soundtrack.
+ */
+let musicGain: GainNode | null = null
+
+export function musicNodes(): { ac: AudioContext; out: GainNode; now: number } | null {
+  if (!ctx) return null
+  if (!musicGain) {
+    musicGain = ctx.createGain()
+    // Under the effects on purpose. A shot you cannot hear over the riff is a
+    // shot you cannot tell landed.
+    musicGain.gain.value = 0.34
+    musicGain.connect(ctx.destination)
+  }
+  return { ac: ctx, out: musicGain, now: ctx.currentTime }
+}
+
+export function setMusicVolume(value: number): void {
+  if (musicGain) musicGain.gain.value = Math.max(0, Math.min(1, value))
+}
+
+/** Shared white noise, for anything that needs a percussive hiss. */
+export function sharedNoise(ac: AudioContext): AudioBufferSourceNode | null {
+  return noiseSource(ac)
+}
+
+/**
  * Hands back non-null references, or null when audio is not up yet.
  *
  * A `ctx is AudioContext` predicate cannot work here: a type predicate has to

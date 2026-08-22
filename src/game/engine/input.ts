@@ -11,7 +11,7 @@
  * ZQSD.
  */
 
-export type Action = 'forward' | 'back' | 'left' | 'right' | 'use' | 'fire' | 'run'
+export type Action = 'forward' | 'back' | 'left' | 'right' | 'use' | 'fire' | 'run' | 'mute'
 
 const BINDINGS: Record<string, Action> = {
   KeyW: 'forward',
@@ -22,6 +22,7 @@ const BINDINGS: Record<string, Action> = {
   KeyD: 'right',
   KeyE: 'use',
   Space: 'use',
+  KeyM: 'mute',
   ShiftLeft: 'run',
   ShiftRight: 'run',
 }
@@ -42,6 +43,8 @@ export class Input {
   private wheelDelta = 0
   /** Set on the press edge of the use key, cleared when consumed. */
   private usePressed = false
+  /** Same, for the music toggle. */
+  private mutePressed = false
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -113,6 +116,13 @@ export class Input {
     return out
   }
 
+  /** True once per physical press of the music key. */
+  consumeMute(): boolean {
+    const out = this.mutePressed
+    this.mutePressed = false
+    return out
+  }
+
   private onWheel = (e: WheelEvent) => {
     if (!this.engaged) return
     this.wheelDelta += e.deltaY > 0 ? 1 : -1
@@ -134,7 +144,10 @@ export class Input {
     e.preventDefault()
     // Latched before the add, so `held` still lacks the action on a genuine
     // first press and already has it on every auto-repeat.
-    if (action === 'use' && !this.held.has(action)) this.usePressed = true
+    if (!this.held.has(action)) {
+      if (action === 'use') this.usePressed = true
+      if (action === 'mute') this.mutePressed = true
+    }
     this.held.add(action)
   }
 
@@ -153,6 +166,7 @@ export class Input {
     this.slotQueue.length = 0
     this.wheelDelta = 0
     this.usePressed = false
+    this.mutePressed = false
   }
 
   private onMouseDown = () => {
@@ -174,6 +188,7 @@ export class Input {
     if (!nowEngaged) {
       this.held.clear()
       this.usePressed = false
+      this.mutePressed = false
     }
   }
 

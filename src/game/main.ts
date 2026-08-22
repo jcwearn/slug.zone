@@ -68,6 +68,7 @@ import {
   playTallyTick,
   unlockAudio,
 } from './audio/sfx.ts'
+import { startMusic, toggleMusic } from './audio/music.ts'
 import e1m1 from './world/levels/e1m1.ts'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#viewport')
@@ -219,7 +220,11 @@ function promptNow(): Notice {
 
 const input = new Input(canvas, () => {
   overlay?.classList.add('hidden')
+  // Order matters: the context has to exist before anything can be scheduled
+  // on it, and both hang off the same gesture because a browser will not give
+  // you an AudioContext without one.
   unlockAudio()
+  startMusic(level.music)
 })
 
 const deathScreen = document.querySelector<HTMLElement>('#dead')
@@ -471,6 +476,10 @@ new Loop({
 
     // Use, before the exit check: a door opened on the tick you step onto the
     // exit should still open.
+    if (input.consumeMute()) {
+      say(toggleMusic() ? 'MUSIC ON' : 'MUSIC OFF', LIME_TEXT)
+    }
+
     if (input.consumeUse()) {
       // The exit wins, and standing on it is the whole test -- no aiming. It
       // is checked with the same `atExit` the prompt uses, in the same order,
