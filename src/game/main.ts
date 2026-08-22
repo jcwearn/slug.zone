@@ -8,6 +8,8 @@ import { parseLevel } from './world/level.ts'
 import { worldSpace } from './world/space.ts'
 import { buildLevelMeshes } from './world/geometry.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
+import { createHealth, damagePlayer, tickHealth } from './player/health.ts'
+import { ScreenLayer } from './ui/screen.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
   enemyCylinder,
@@ -40,6 +42,8 @@ import {
   playSquelch,
   playGrinderBlast,
   playImpact,
+  playDeath,
+  playHurt,
   playSaltBlast,
   playSwitch,
   unlockAudio,
@@ -88,6 +92,9 @@ interface Live {
   view: EnemyView
   /** Whether it had noticed the player last tick, for the alert sound. */
   wasIdle: boolean
+  /** Where it started, so a restart can put it back. */
+  spawnX: number
+  spawnZ: number
 }
 
 const live: Live[] = []
@@ -96,11 +103,14 @@ for (const entity of level.entities) {
   const enemy = spawnEnemy(entity.type, entity.x, entity.z)
   const enemyView = buildEnemyView(enemy.def)
   view.scene.add(enemyView.group)
-  live.push({ enemy, view: enemyView, wasIdle: true })
+  live.push({ enemy, view: enemyView, wasIdle: true, spawnX: entity.x, spawnZ: entity.z })
 }
 
 const player = createPlayer(level)
+const health = createHealth()
 const arsenal = createArsenal()
+const screen = new ScreenLayer()
+const keys = new Set<string>()
 const viewmodel = new Viewmodel()
 
 // Both weapons from the start while there is nothing to pick them up from.
@@ -112,6 +122,34 @@ const input = new Input(canvas, () => {
   overlay?.classList.add('hidden')
   unlockAudio()
 })
+
+const deathScreen = document.querySelector<HTMLElement>('#dead')
+
+/**
+ * Put everything back for another go.
+ *
+ * A full reset rather than a page reload: reloading rebuilds the level meshes
+ * and regenerates every texture, which is a visible pause for something that
+ * should be instant.
+ */
+function restart(): void {
+  const fresh = createPlayer(level)
+  Object.assign(player, fresh)
+
+  Object.assign(health, createHealth())
+
+  for (const entry of live) {
+    const spawn = level.entities.find(
+      (e) => e.type === entry.enemy.def.id && e.x === entry.spawnX && e.z === entry.spawnZ,
+    )
+    entry.enemy = spawnEnemy(entry.enemy.def.id, entry.spawnX, entry.spawnZ)
+    entry.wasIdle = true
+    void spawn
+  }
+
+  keys.clear()
+  deathScreen?.classList.add('hidden')
+}
 
 let lastPhase = arsenal.phase
 
@@ -225,6 +263,20 @@ new Loop({
       return
     }
 
+    if (health.dead) {
+      deathScreen?.classList.remove('hidden')
+      // Fire restarts. The button is already down from whatever killed you, so
+      // it has to be released first or the click that killed you also skips
+      // the death screen.
+      if (input.isDown('fire')) {
+        input.releaseFire()
+        restart()
+      }
+      tickHealth(health, dt)
+      screen.update(health, arsenal, keys)
+      return
+    }
+
     const before = { x: player.x, z: player.z }
     // Live slugs only -- corpses are scenery you walk over.
     const blockers: Disc[] = targetable(live.map((l) => l.enemy)).map((e) => ({
@@ -259,6 +311,14 @@ new Loop({
       const nowIdle = entry.enemy.mind.state === 'idle'
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
+
+      // The strike lands at the end of the wind-up, and only if the player is
+      // still in range -- the FSM already decided that.
+      if (entry.enemy.mind.didStrike) {
+        const result = damagePlayer(health, entry.enemy.def.damage)
+        if (result.died) playDeath()
+        else if (result.applied) playHurt(rng())
+      }
     }
 
     // After everyone has moved, so the push resolves the positions they
@@ -274,6 +334,8 @@ new Loop({
 
     for (const entry of live) poseEnemy(entry.view, entry.enemy, s, level.wallHeight, dt)
 
+    tickHealth(health, dt)
+    screen.update(health, arsenal, keys)
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)
   },
@@ -283,6 +345,6 @@ new Loop({
     view.camera.position.set(player.x * s, eyeY, player.z * s)
     view.camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ')
     lantern.position.copy(view.camera.position)
-    view.render(viewmodel)
+    view.render(viewmodel, screen)
   },
 }).start()

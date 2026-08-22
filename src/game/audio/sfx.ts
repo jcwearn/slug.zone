@@ -268,3 +268,55 @@ export function playAlert(variation = 0): void {
   osc.start(now)
   osc.stop(now + 0.28)
 }
+
+/** Taking a hit: a short, dull thud with a grunt under it. */
+export function playHurt(variation = 0): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const osc = ac.createOscillator()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(180 + variation * 40, now)
+  osc.frequency.exponentialRampToValueAtTime(80, now + 0.14)
+
+  const filter = ac.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.setValueAtTime(1100, now)
+  filter.frequency.exponentialRampToValueAtTime(300, now + 0.16)
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.42, now + 0.01)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+
+  osc.connect(filter).connect(gain).connect(out)
+  osc.start(now)
+  osc.stop(now + 0.24)
+}
+
+/** Dying: a long descending groan. */
+export function playDeath(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const osc = ac.createOscillator()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(160, now)
+  osc.frequency.exponentialRampToValueAtTime(38, now + 1.1)
+
+  const filter = ac.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.setValueAtTime(900, now)
+  filter.frequency.exponentialRampToValueAtTime(160, now + 1.2)
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.5, now + 0.05)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.3)
+
+  osc.connect(filter).connect(gain).connect(out)
+  osc.start(now)
+  osc.stop(now + 1.35)
+}

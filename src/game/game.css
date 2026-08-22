@@ -73,3 +73,38 @@ body {
     animation: none;
   }
 }
+
+/*
+ * The death screen. Shares the gate's layout but sits above it and in red --
+ * the only red type in the game, so it cannot be mistaken for the pause
+ * prompt at a glance.
+ */
+#dead {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  background: rgb(30 0 0 / 62%);
+  color: #e04a2a;
+  font-family: 'Press Start 2P', monospace;
+  text-align: center;
+  cursor: pointer;
+}
+
+#dead.hidden {
+  display: none;
+}
+
+#dead .title {
+  margin: 0;
+  font-size: clamp(0.8rem, 3vw, 1.6rem);
+}
+
+#dead .hint {
+  margin: 0;
+  font-size: clamp(0.55rem, 1.8vw, 0.9rem);
+  opacity: 0.85;
+}
