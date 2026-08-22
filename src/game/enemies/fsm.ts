@@ -96,11 +96,23 @@ export function damage(mind: EnemyMind, def: EnemyDef, amount: number, rng: () =
 }
 
 export interface Intent {
-  /** Should it move toward the player this tick. */
-  move: boolean
+  /**
+   * Signed speed along the line to the player, in grid units per second.
+   * Positive closes, negative gives ground, zero holds.
+   *
+   * A number rather than a "should it move" flag because two of the three
+   * things that make a slug feel different are speeds: a Spitter backing off
+   * between shots moves at its own pace, and a Brute lunging during its
+   * wind-up moves at a different one from the one it walks at. The caller
+   * still owns the actual movement, because that needs the level.
+   */
+  velocity: number
   /** Should it turn to face the player. */
   turn: boolean
 }
+
+const HOLD: Intent = { velocity: 0, turn: false }
+const WATCH: Intent = { velocity: 0, turn: true }
 
 /**
  * Advance one fixed step. Returns what the enemy wants to do; the caller owns
@@ -110,14 +122,14 @@ export function step(mind: EnemyMind, def: EnemyDef, perception: Perception, dt:
   mind.didStrike = false
   mind.justDied = false
 
-  if (mind.state === 'dead') return { move: false, turn: false }
+  if (mind.state === 'dead') return HOLD
 
   mind.attackCooldown = Math.max(0, mind.attackCooldown - dt)
 
   if (mind.state === 'dying') {
     mind.timer -= dt
     if (mind.timer <= 0) mind.state = 'dead'
-    return { move: false, turn: false }
+    return HOLD
   }
 
   const sees = canSee(def, perception)
@@ -131,33 +143,45 @@ export function step(mind: EnemyMind, def: EnemyDef, perception: Perception, dt:
       }
       // Turning while idle would make it track the player before noticing
       // them, which reads as the enemy cheating.
-      return { move: false, turn: false }
+      return HOLD
 
     case 'alert':
       mind.timer -= dt
       if (mind.timer <= 0) mind.state = 'chase'
       // Turns during the reaction beat, so the wind-up is visible.
-      return { move: false, turn: true }
+      return WATCH
 
     case 'pain':
       mind.timer -= dt
       if (mind.timer <= 0) mind.state = 'chase'
-      return { move: false, turn: false }
+      return HOLD
 
     case 'chase':
+      // Attacking is tested FIRST, before giving ground. The other order lets
+      // a cornered kiter back into a wall and stay there refusing to shoot,
+      // which turns the most dangerous thing in the room into a free kill.
+      if (
+        perception.distance <= def.attackRange &&
+        perception.hasLineOfSight &&
+        mind.attackCooldown <= 0
+      ) {
+        mind.state = 'attack'
+        mind.timer = def.attackWindup
+        return WATCH
+      }
+      // Too close for comfort: back off between shots rather than letting the
+      // player walk into its face and stay there.
+      if (mind.provoked && def.standoff > 0 && perception.distance < def.standoff) {
+        return { velocity: -def.speed, turn: true }
+      }
       if (perception.distance <= def.attackRange && perception.hasLineOfSight) {
-        if (mind.attackCooldown <= 0) {
-          mind.state = 'attack'
-          mind.timer = def.attackWindup
-          return { move: false, turn: true }
-        }
-        // In range but reloading: hold position rather than shuffling into
+        // In range and reloading: hold position rather than shuffling into
         // the player's face.
-        return { move: false, turn: true }
+        return WATCH
       }
       // Keeps chasing once provoked even with sight broken, so breaking line
       // of sight is cover rather than an off switch.
-      return { move: mind.provoked, turn: true }
+      return { velocity: mind.provoked ? def.speed : 0, turn: true }
 
     case 'attack':
       mind.timer -= dt
@@ -167,10 +191,13 @@ export function step(mind: EnemyMind, def: EnemyDef, perception: Perception, dt:
         mind.didStrike = perception.distance <= def.attackRange && perception.hasLineOfSight
         mind.attackCooldown = def.attackCooldown
         mind.state = 'chase'
+        return WATCH
       }
-      return { move: false, turn: true }
+      // A charger closes during its own telegraph, so the wind-up is a lunge
+      // you step out of rather than a pause you shoot through.
+      return { velocity: def.charge ?? 0, turn: true }
 
     default:
-      return { move: false, turn: false }
+      return HOLD
   }
 }

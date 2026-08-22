@@ -34,6 +34,32 @@ export interface EnemyDef {
   color: number
   darkColor: number
   /**
+   * Backs away when the player gets nearer than this, in grid units. 0 for an
+   * enemy that always closes.
+   *
+   * Kiting, not fleeing: it still attacks whenever its cooldown is up, and
+   * only gives ground between shots. An enemy that retreats INSTEAD of
+   * attacking becomes harmless the moment it is cornered, which turns the one
+   * dangerous thing in the room into a free kill.
+   */
+  standoff: number
+  /**
+   * Speed while winding up an attack, in grid units per second, or null for
+   * an enemy that plants its feet to swing.
+   *
+   * A charger closes during the telegraph rather than before it, so the
+   * wind-up reads as a lunge you have to move out of rather than a pause.
+   */
+  charge: number | null
+  /**
+   * Damage dealt to everything within `radius` when it dies, or null.
+   *
+   * The counterweight to the shotgun: something that punishes killing it from
+   * arm's length gives the Salt Shaker a job at range that the Grinder cannot
+   * do for it.
+   */
+  deathBurst: { damage: number; radius: number } | null
+  /**
    * Ranged attack, or null for a melee enemy.
    *
    * Melee damage lands the instant the wind-up ends. Ranged damage is carried

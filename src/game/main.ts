@@ -23,6 +23,7 @@ import { createTally, pressTally, snapTally, stepTally, type Tally } from './ui/
 import { browserStorage, loadRecords, recordTime, saveRecords } from './save/scores.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
+  burstDamage,
   enemyCylinder,
   separateEnemies,
   spawnEnemy,
@@ -529,7 +530,29 @@ new Loop({
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
       // `justDied` is already a one-tick flag, so no edge tracking needed.
-      if (entry.enemy.mind.justDied) session.kills++
+      if (entry.enemy.mind.justDied) {
+        session.kills++
+        // Whatever it was carrying goes off where it stood. Checked here
+        // rather than at the shot, because a slug can also be killed by
+        // another slug's burst -- and a chain reaction is the point of them.
+        const blast = burstDamage(entry.enemy, player.x, player.z)
+        if (blast > 0) {
+          const result = damagePlayer(health, blast)
+          if (result.died) playDeath()
+          else if (result.applied) playHurt(rng())
+        }
+        if (entry.enemy.def.deathBurst) {
+          tracers.emitImpact(
+            entry.enemy.x * s,
+            space.eyeY(entry.enemy.def.height * 0.5),
+            entry.enemy.z * s,
+            0,
+            0,
+            rng,
+          )
+          playSplat()
+        }
+      }
 
       // The strike lands at the end of the wind-up, and only if the player is
       // still in range -- the FSM already decided that.

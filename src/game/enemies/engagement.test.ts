@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { hasLineOfSight } from '../engine/collision.ts'
 import { parseLevel } from '../world/level.ts'
 import { worldSpace } from '../world/space.ts'
-import { enemyCylinder, spawnEnemy, targetable, updateEnemy } from './enemy.ts'
+import { burstDamage, enemyCylinder, spawnEnemy, targetable, updateEnemy } from './enemy.ts'
 import { damage, isAlive } from './fsm.ts'
+import { ENEMIES } from './definitions.ts'
 import { nearestHit, verticalAutoAim } from './hitscan.ts'
 import { createArsenal, damageAtRange, definition, fire, tickArsenal } from '../weapons/arsenal.ts'
 import { aimDirection } from '../player/aim.ts'
@@ -179,5 +180,54 @@ describe('an enemy hunting the player', () => {
     grub.facing = facing(grub.x, grub.z, 1.5, 1.5)
     for (let t = 0; t < 1; t += STEP) updateEnemy(grub, level, 1.5, 1.5, STEP)
     expect(grub.mind.state).not.toBe('idle')
+  })
+})
+
+describe('death burst', () => {
+  const bloat = {
+    ...ENEMIES.grub,
+    id: 'bloat',
+    deathBurst: { damage: 40, radius: 2.5 },
+  }
+
+  const freshlyDead = () => {
+    const enemy = { ...spawnEnemy('grub', 5, 5), def: bloat }
+    enemy.mind.justDied = true
+    return enemy
+  }
+
+  it('does nothing for a slug that carries no burst', () => {
+    const plain = spawnEnemy('grub', 5, 5)
+    plain.mind.justDied = true
+    expect(burstDamage(plain, 5, 5)).toBe(0)
+  })
+
+  it('does nothing on any tick but the one it dies on', () => {
+    // `justDied` is a one-tick flag. Without the guard the corpse keeps
+    // detonating every frame for as long as the player stands near it.
+    const enemy = freshlyDead()
+    enemy.mind.justDied = false
+    expect(burstDamage(enemy, 5, 5)).toBe(0)
+  })
+
+  it('hits hardest at the centre', () => {
+    expect(burstDamage(freshlyDead(), 5, 5)).toBe(40)
+  })
+
+  it('falls off to nothing at the rim rather than stopping dead', () => {
+    // A flat blast makes the radius a cliff, and a cliff nobody can see is
+    // indistinguishable from a bug.
+    const near = burstDamage(freshlyDead(), 5 + 0.5, 5)
+    const far = burstDamage(freshlyDead(), 5 + 2.0, 5)
+    expect(near).toBeGreaterThan(far)
+    expect(far).toBeGreaterThan(0)
+    expect(burstDamage(freshlyDead(), 5 + bloat.deathBurst.radius, 5)).toBe(0)
+    expect(burstDamage(freshlyDead(), 5 + bloat.deathBurst.radius + 1, 5)).toBe(0)
+  })
+
+  it('measures from the slug, not from an axis', () => {
+    // Diagonal distance, so a burst cannot be a square dressed up as a circle.
+    const diagonal = burstDamage(freshlyDead(), 5 + 1.8, 5 + 1.8)
+    expect(diagonal, 'a corner 2.55 away is outside a 2.5 radius').toBe(0)
   })
 })

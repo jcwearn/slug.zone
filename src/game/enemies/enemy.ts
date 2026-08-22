@@ -73,14 +73,16 @@ export function updateEnemy(
     enemy.facing += Math.abs(delta) <= maxTurn ? delta : Math.sign(delta) * maxTurn
   }
 
-  if (intent.move && distance > 1e-4) {
-    const speed = enemy.def.speed * dt
+  if (intent.velocity !== 0 && distance > 1e-4) {
+    // Signed: a negative velocity walks the same line backwards, which is how
+    // a Spitter gives ground without ever turning its back on the player.
+    const travel = intent.velocity * dt
     const moved = moveWithCollision(
       level,
       enemy.x,
       enemy.z,
-      (dx / distance) * speed,
-      (dz / distance) * speed,
+      (dx / distance) * travel,
+      (dz / distance) * travel,
       enemy.def.radius,
     )
     enemy.x = moved.x
@@ -102,6 +104,24 @@ export function updateEnemy(
     enemy.x = clear.x
     enemy.z = clear.z
   }
+}
+
+/**
+ * Damage the burst of a just-killed enemy does to a body at (x, z).
+ *
+ * Falls off linearly to nothing at the rim, so standing at the edge is worth
+ * something -- a flat blast makes the radius a cliff, and a cliff you cannot
+ * see is indistinguishable from a bug.
+ *
+ * Returns 0 for anything with no burst, out of range, or not freshly dead, so
+ * the caller can apply it unconditionally.
+ */
+export function burstDamage(enemy: Enemy, x: number, z: number): number {
+  const burst = enemy.def.deathBurst
+  if (!burst || !enemy.mind.justDied) return 0
+  const distance = Math.hypot(x - enemy.x, z - enemy.z)
+  if (distance >= burst.radius) return 0
+  return burst.damage * (1 - distance / burst.radius)
 }
 
 /** Hit volume in WORLD units. */

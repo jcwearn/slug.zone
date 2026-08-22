@@ -31,6 +31,9 @@ export const ENEMIES: Record<string, EnemyDef> = {
     reactionTime: 0.15,
     color: SLUG_BROWN,
     darkColor: SLUG_DARK,
+    standoff: 0,
+    charge: null,
+    deathBurst: null,
     projectile: null,
   },
 
@@ -56,6 +59,12 @@ export const ENEMIES: Record<string, EnemyDef> = {
     reactionTime: 0.35,
     color: 0x7a9c3a,
     darkColor: 0x3c4a1c,
+    // Gives ground when you close, which is what turns "walk at it until it
+    // dies" into a fight. Comfortably inside its 7.5 reach, so backing off
+    // never takes it out of the range it wants to shoot from.
+    standoff: 4.5,
+    charge: null,
+    deathBurst: null,
     // Slow enough to see coming and step out of. A Spitter that cannot be
     // dodged is just a Grub that hits you from across the room.
     projectile: { speed: 7.5, radius: 0.18 },
