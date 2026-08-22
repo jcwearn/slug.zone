@@ -1,0 +1,35 @@
+name: Deploy
+
+# Deploys to Cloudflare Pages with this repo's own scoped API token. The
+# project has no Git connection to Cloudflare -- deploys come from here alone.
+#
+# Triggers on push to ANY branch, which is what Cloudflare's Git integration
+# did: a branch pushed without a PR still got a preview. --branch decides the
+# rest -- equal to the project's production branch it deploys production,
+# anything else becomes a preview at <branch>.slug-zone.pages.dev.
+#
+# No `concurrency:` block here. The reusable workflow declares its own, and two
+# groups for one logical run means the outer holds a slot while the inner
+# queues behind it.
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    uses: jcwearn/workflows/.github/workflows/cloudflare-pages-deploy.yaml@c9e49bd4c2226fa829a0179277df707b4585ce9e # v1
+    with:
+      # The project name, not the repo name. See wrangler.jsonc.
+      project-name: slug-zone
+      # production-branch is left at its `main` default, which is correct now
+      # that this repo's default branch has been renamed from master. On master
+      # every push would have deployed as a PREVIEW and production would never
+      # have updated -- silently, behind a green check.
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
