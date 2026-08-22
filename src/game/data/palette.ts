@@ -15,3 +15,12 @@ export const WALL_BRICK = 0x5a4a3a
 export const WALL_METAL = 0x6b6b73
 export const FLOOR_DAMP = 0x3a3a30
 export const CEIL_CONCRETE = 0x2a2a2a
+
+// The three keycards. One table, because the HUD pip and the card lying on the
+// floor being different reds is exactly the kind of mismatch nobody reports as
+// a bug and everybody notices.
+export const KEY_COLOURS = {
+  red: 0xc8341a,
+  blue: 0x3a6ad0,
+  yellow: 0xd0b23a,
+} as const

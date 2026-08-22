@@ -365,3 +365,51 @@ export function playSplat(): void {
   src.start(now)
   src.stop(now + 0.24)
 }
+
+/**
+ * Picking something up: a two-note blip.
+ *
+ * Deliberately shorter and quieter than the weapon-switch chirp it sits next
+ * to. A pickup happens while you are running and being shot at, so it has to
+ * be legible without competing with the thing that is hurting you.
+ */
+export function playPickup(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+  const osc = ac.createOscillator()
+  osc.type = 'square'
+  osc.frequency.setValueAtTime(520, now)
+  osc.frequency.setValueAtTime(780, now + 0.045)
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.09, now)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11)
+  osc.connect(gain).connect(out)
+  osc.start(now)
+  osc.stop(now + 0.12)
+}
+
+/**
+ * A keycard: a three-note rise, longer and brighter than an ordinary pickup.
+ *
+ * Keys are the one item that changes where you can go, so they get their own
+ * sound rather than sharing the blip -- otherwise the moment a level opens up
+ * sounds exactly like finding another box of ammo.
+ */
+export function playKeyPickup(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+  const osc = ac.createOscillator()
+  osc.type = 'triangle'
+  osc.frequency.setValueAtTime(600, now)
+  osc.frequency.setValueAtTime(800, now + 0.06)
+  osc.frequency.setValueAtTime(1180, now + 0.12)
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.13, now)
+  gain.gain.setValueAtTime(0.13, now + 0.16)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3)
+  osc.connect(gain).connect(out)
+  osc.start(now)
+  osc.stop(now + 0.32)
+}

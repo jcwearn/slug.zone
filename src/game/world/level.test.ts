@@ -8,6 +8,7 @@ import {
   unreachableWalkableCells,
 } from './level.ts'
 import type { LevelSource } from './types.ts'
+import { ITEMS } from '../pickups/definitions.ts'
 import e1m1 from './levels/e1m1.ts'
 
 const base: LevelSource = {
@@ -204,6 +205,37 @@ describe('shipped levels', () => {
         isSolid(level, Math.floor(e.x), Math.floor(e.z)),
       )
       expect(embedded, 'entities stuck inside walls').toEqual([])
+    },
+  )
+
+  it.each(levels.map((l) => [l.id, l] as const))(
+    '%s names a real item on every pickup',
+    (_id, src) => {
+      // The parser passes entities through unvalidated -- it knows nothing about
+      // the item catalogue and should not. So a typo'd `item: 'helth'` parses
+      // fine and only fails at spawn, which on a level nobody has replayed since
+      // means it fails in front of a player. Catching it here is what makes the
+      // authoring safe.
+      const level = parseLevel(src)
+      const unknown = level.entities
+        .filter((e) => e.type === 'pickup')
+        .filter((e) => !(e.item !== undefined && e.item in ITEMS))
+        .map((e) => String(e.item))
+      expect(unknown, 'pickup items with no definition').toEqual([])
+    },
+  )
+
+  it.each(levels.map((l) => [l.id, l] as const))(
+    '%s puts every entity within reach',
+    (_id, src) => {
+      // On open ground is not the same as reachable. An item walled into a
+      // sealed pocket passes every other check here and is simply never found.
+      const level = parseLevel(src)
+      const seen = reachableFromStart(level)
+      const marooned = level.entities
+        .filter((e) => !seen.has(Math.floor(e.z) * level.width + Math.floor(e.x)))
+        .map((e) => `${e.type}${e.item ? `:${e.item}` : ''}@${e.x},${e.z}`)
+      expect(marooned, 'entities the player can never get to').toEqual([])
     },
   )
 })

@@ -1,25 +1,34 @@
 import * as THREE from 'three'
 import { Hud } from './hud.ts'
+import { MessageLine } from './message.ts'
 import type { PlayerHealth } from '../player/health.ts'
 import type { Arsenal } from '../weapons/arsenal.ts'
 import type { Expression } from './face.ts'
 
 /**
- * The screen-space layer: the status bar and the damage flash.
+ * The screen-space layer: the status bar, the message line and the damage
+ * flash.
  *
  * Orthographic over 0..1 in both axes, so positions read as fractions of the
  * screen and nothing has to know the render target's pixel size.
  */
+export interface Notice {
+  text: string
+  colour: string
+}
+
 export class ScreenLayer {
   readonly scene = new THREE.Scene()
   readonly camera = new THREE.OrthographicCamera(0, 1, 1, 0, -1, 1)
 
   private readonly hud = new Hud()
+  private readonly message = new MessageLine()
   private readonly flash: THREE.Mesh
   private readonly flashMaterial: THREE.MeshBasicMaterial
 
   constructor() {
     this.scene.add(this.hud.mesh)
+    this.scene.add(this.message.mesh)
 
     // Full-screen red wash, additive so it tints rather than covers -- an
     // opaque overlay at any real strength hides the thing that is hitting you,
@@ -43,8 +52,10 @@ export class ScreenLayer {
     arsenal: Arsenal,
     keys: Set<string>,
     expression: Expression = 'neutral',
+    notice: Notice = { text: '', colour: '' },
   ): void {
     this.hud.update(health, arsenal, keys, expression)
+    this.message.update(notice.text, notice.colour)
     // Capped well below 1: the flash should read as being hit, not as a
     // screen transition.
     this.flashMaterial.opacity = Math.min(0.55, health.painFlash * 0.55)
@@ -53,6 +64,7 @@ export class ScreenLayer {
 
   dispose(): void {
     this.hud.dispose()
+    this.message.dispose()
     this.flash.geometry.dispose()
     this.flashMaterial.dispose()
   }
