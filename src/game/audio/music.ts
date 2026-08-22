@@ -1,5 +1,6 @@
 import * as Tone from 'tone'
 import { buildTrack, midiToHz, stepSeconds, trackSteps, type Track } from './track.ts'
+import { DEFAULT_MUSIC_VOLUME, MUSIC_MAX_GAIN } from '../save/settings.ts'
 
 /**
  * The player: hands `track.ts` to Tone.js.
@@ -40,6 +41,14 @@ let enabled = true
 let broken = false
 /** Bumped by every start, so a slow one cannot schedule over a newer one. */
 let generation = 0
+/**
+ * 0..1, before `MUSIC_MAX_GAIN`.
+ *
+ * Kept here rather than only on the mixer, because it can be set before the
+ * synths exist -- the saved setting is loaded at boot and the graph is not
+ * built until the first click.
+ */
+let volume = DEFAULT_MUSIC_VOLUME
 
 function trackFor(id: string): Track {
   let track = tracks.get(id)
@@ -61,7 +70,7 @@ function build(): Voices | null {
   if (voices) return voices
   if (broken) return null
 
-  const bus = new Tone.Gain(0.42).toDestination()
+  const bus = new Tone.Gain(volume * MUSIC_MAX_GAIN).toDestination()
 
   // A compressor across the whole mix so the chorus does not simply clip when
   // six voices land on the same downbeat.
@@ -279,7 +288,15 @@ export function toggleMusic(): boolean {
   return enabled
 }
 
-/** 0..1. */
+/**
+ * 0..1, applied through `MUSIC_MAX_GAIN`.
+ *
+ * Safe to call before the music exists: the value is remembered and used when
+ * the graph is eventually built.
+ */
 export function setMusicVolume(value: number): void {
-  if (voices) voices.bus.gain.value = Math.max(0, Math.min(1, value))
+  volume = Math.max(0, Math.min(1, value))
+  if (voices) voices.bus.gain.value = volume * MUSIC_MAX_GAIN
 }
+
+export const musicVolume = (): number => volume

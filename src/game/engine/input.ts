@@ -11,7 +11,8 @@
  * ZQSD.
  */
 
-export type Action = 'forward' | 'back' | 'left' | 'right' | 'use' | 'fire' | 'run' | 'mute'
+export type Action =
+  'forward' | 'back' | 'left' | 'right' | 'use' | 'fire' | 'run' | 'mute' | 'louder' | 'quieter'
 
 const BINDINGS: Record<string, Action> = {
   KeyW: 'forward',
@@ -23,6 +24,10 @@ const BINDINGS: Record<string, Action> = {
   KeyE: 'use',
   Space: 'use',
   KeyM: 'mute',
+  BracketRight: 'louder',
+  BracketLeft: 'quieter',
+  Equal: 'louder',
+  Minus: 'quieter',
   ShiftLeft: 'run',
   ShiftRight: 'run',
 }
@@ -45,6 +50,8 @@ export class Input {
   private usePressed = false
   /** Same, for the music toggle. */
   private mutePressed = false
+  /** Net volume notches since the last consume. */
+  private volumeDelta = 0
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -123,6 +130,19 @@ export class Input {
     return out
   }
 
+  /**
+   * Net volume notches since the last call. Positive is louder.
+   *
+   * Accumulated rather than latched to one press, because this is the one
+   * binding where key repeat is wanted: holding the key should walk the volume
+   * rather than move it once and stop.
+   */
+  consumeVolume(): number {
+    const out = this.volumeDelta
+    this.volumeDelta = 0
+    return out
+  }
+
   private onWheel = (e: WheelEvent) => {
     if (!this.engaged) return
     this.wheelDelta += e.deltaY > 0 ? 1 : -1
@@ -144,7 +164,11 @@ export class Input {
     e.preventDefault()
     // Latched before the add, so `held` still lacks the action on a genuine
     // first press and already has it on every auto-repeat.
-    if (!this.held.has(action)) {
+    // Volume is read on every keydown INCLUDING the OS repeats, so holding it
+    // slides. The other two latch on the press edge only.
+    if (action === 'louder') this.volumeDelta++
+    else if (action === 'quieter') this.volumeDelta--
+    else if (!this.held.has(action)) {
       if (action === 'use') this.usePressed = true
       if (action === 'mute') this.mutePressed = true
     }
@@ -167,6 +191,7 @@ export class Input {
     this.wheelDelta = 0
     this.usePressed = false
     this.mutePressed = false
+    this.volumeDelta = 0
   }
 
   private onMouseDown = () => {
@@ -202,6 +227,7 @@ export class Input {
       this.held.clear()
       this.usePressed = false
       this.mutePressed = false
+      this.volumeDelta = 0
     }
 
     if (engaging) {

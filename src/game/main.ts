@@ -21,6 +21,7 @@ import { createExplored, resetExplored, revealFrom } from './world/explored.ts'
 import { atExit, createSession, finishLevel, tickRun } from './session.ts'
 import { createTally, pressTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
 import { browserStorage, loadRecords, recordTime, saveRecords } from './save/scores.ts'
+import { loadSettings, saveSettings, stepVolume, volumePercent } from './save/settings.ts'
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
   enemyCylinder,
@@ -68,7 +69,7 @@ import {
   playTallyTick,
   unlockAudio,
 } from './audio/sfx.ts'
-import { startMusic, toggleMusic } from './audio/music.ts'
+import { musicVolume, setMusicVolume, startMusic, toggleMusic } from './audio/music.ts'
 import e1m1 from './world/levels/e1m1.ts'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#viewport')
@@ -155,6 +156,11 @@ let charted = 0
 
 const session = createSession(level, live.length, pickups.length)
 const store = browserStorage()
+
+// Applied before anything can make a sound. `setMusicVolume` remembers the
+// value even though the synths do not exist until the first click.
+const settings = loadSettings(store)
+setMusicVolume(settings.musicVolume)
 let tally: Tally | null = null
 
 /**
@@ -478,6 +484,17 @@ new Loop({
     // exit should still open.
     if (input.consumeMute()) {
       say(toggleMusic() ? 'MUSIC ON' : 'MUSIC OFF', LIME_TEXT)
+    }
+
+    const notches = input.consumeVolume()
+    if (notches !== 0) {
+      // One notch per frame at most, so a held key slides at a readable rate
+      // rather than crossing the whole range in three frames of key repeat.
+      const next = stepVolume(musicVolume(), notches > 0 ? 1 : -1)
+      setMusicVolume(next)
+      settings.musicVolume = next
+      saveSettings(store, settings)
+      say(`MUSIC ${volumePercent(next)}%`, LIME_TEXT)
     }
 
     if (input.consumeUse()) {
