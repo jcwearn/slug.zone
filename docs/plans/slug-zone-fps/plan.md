@@ -62,22 +62,54 @@ build` clean; landing page ships zero JavaScript; visually indistinguishable
 
 ### Phase 5: Game shell
 
-- `engine/renderer.ts` (320×200 render target, nearest upscale, integer
+- `engine/renderer.ts` (320x200 render target, nearest upscale, integer
   letterboxing), `engine/loop.ts`, `engine/input.ts`, `engine/math.ts`
-  (seeded RNG — every gameplay random draw goes through it), `data/palette.ts`
+  (seeded RNG -- every gameplay random draw goes through it), `data/palette.ts`
 
-### Phases G1–G10: The game
+### Phases G1-G10: The game
 
 G1 world & movement · G2 weapons · G3 enemies wave 1 · G4 enemies wave 2 ·
 G5 HUD, pickups, progression · G6 content · G7 boss · G8 music · G9 mobile ·
 G10 polish
 
-Six levels (E1M1–E1M6), seven enemy types, six salt-based weapons, and Salinos,
+Six levels (E1M1-E1M6), seven enemy types, six salt-based weapons, and Salinos,
 The Unsalted as the boss. Art direction is hybrid: low-poly meshes with
 procedurally generated pixel textures, rendered low and upscaled hard.
 
 ### Final: DNS cutover
 
 Ask the friend to move nameservers to Cloudflare. Then add the zone, the two
-proxied CNAMEs, **and** the matching `cloudflare_pages_domain` entries — a CNAME
+proxied CNAMEs, **and** the matching `cloudflare_pages_domain` entries -- a CNAME
 without the Pages domain returns 522, not 404.
+
+## Deviations from the plan, and why
+
+Recorded because each one changes what a later phase should assume.
+
+**Phases 0 and 1 shipped as one PR.** A config-only Phase 0 could not pass its
+own CI: `tsc -b` with `include: ["src"]` and a `build` with no entry HTML both
+fail on an empty tree.
+
+**Phase 4 (the interim landing page on the old GitHub Pages site) was skipped**
+and is still not done. It was deferred because pointing the live site's PLAY
+button at a game that was a spinning cube would have advertised something that
+did not exist. It is still worth doing, or worth dropping in favour of going
+straight to the DNS cutover.
+
+**G5 was pulled ahead of G4.** Player health turns the game from a shooting
+gallery into a fight, and the HUD it needs also fixes ammo being invisible --
+both were blocking playtesting in a way more enemy types were not. G5's pickups
+half is still outstanding.
+
+**The HUD portrait is a committed sprite sheet, not procedural art.** The plan
+said the face would be "procedurally-drawn". Three attempts at a hand-drawn
+character grid never got past "generic person with a moustache"; at 32x32 with a
+hand-picked ramp there is not enough fidelity to look like anyone in particular.
+`public/faces.png` is reference art, downsampled and quantised. This is the only
+asset in the project that cannot be regenerated from source, which is why it has
+its own test file.
+
+**The Spitter's attack became a travelling projectile.** The plan had ranged
+enemies dealing damage directly. A hitscan ranged attack is invisible -- the slug
+twitches and health vanishes -- so it throws a glob that can be dodged, aimed
+where the player WAS when it fired.
