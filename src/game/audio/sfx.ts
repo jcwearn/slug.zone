@@ -176,3 +176,95 @@ export function playSwitch(): void {
   osc.start(now)
   osc.stop(now + 0.13)
 }
+
+/**
+ * A slug taking a hit: an FM-ish squelch. A wobbling lowpass over a detuned
+ * pair is what gives it the wet quality -- a plain tone reads as a beep, and a
+ * plain noise burst reads as static.
+ */
+export function playSquelch(variation = 0, big = false): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const carrier = ac.createOscillator()
+  carrier.type = 'sawtooth'
+  const base = (big ? 90 : 160) + variation * 60
+  carrier.frequency.setValueAtTime(base, now)
+  carrier.frequency.exponentialRampToValueAtTime(base * 0.45, now + 0.18)
+
+  // Modulating the carrier's frequency is what makes it warble rather than
+  // slide.
+  const mod = ac.createOscillator()
+  mod.type = 'sine'
+  mod.frequency.value = 22 + variation * 18
+  const modGain = ac.createGain()
+  modGain.gain.value = base * 0.4
+  mod.connect(modGain).connect(carrier.frequency)
+
+  const filter = ac.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.Q.value = 6
+  filter.frequency.setValueAtTime(1400, now)
+  filter.frequency.exponentialRampToValueAtTime(260, now + 0.2)
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(big ? 0.5 : 0.32, now + 0.012)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + (big ? 0.32 : 0.22))
+
+  carrier.connect(filter).connect(gain).connect(out)
+  carrier.start(now)
+  mod.start(now)
+  carrier.stop(now + 0.36)
+  mod.stop(now + 0.36)
+}
+
+/** A wet burst for a gib. Louder, lower, with a noise splatter over it. */
+export function playGib(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+  playSquelch(0.2, true)
+
+  const src = noiseSource(ac)
+  if (!src) return
+  const filter = ac.createBiquadFilter()
+  filter.type = 'bandpass'
+  filter.frequency.setValueAtTime(900, now)
+  filter.frequency.exponentialRampToValueAtTime(180, now + 0.25)
+  filter.Q.value = 0.8
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.45, now)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3)
+
+  src.connect(filter).connect(gain).connect(out)
+  src.start(now)
+  src.stop(now + 0.32)
+}
+
+/** Noticed you. A short rising growl, so an alert is audible off-screen. */
+export function playAlert(variation = 0): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  const osc = ac.createOscillator()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(70 + variation * 30, now)
+  osc.frequency.exponentialRampToValueAtTime(190 + variation * 40, now + 0.16)
+
+  const filter = ac.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.value = 900
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.28, now + 0.03)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.26)
+
+  osc.connect(filter).connect(gain).connect(out)
+  osc.start(now)
+  osc.stop(now + 0.28)
+}
