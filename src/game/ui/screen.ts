@@ -2,7 +2,10 @@ import * as THREE from 'three'
 import { Hud } from './hud.ts'
 import { MessageLine, PROMPT_Y } from './message.ts'
 import { Intermission } from './intermission.ts'
+import { Minimap } from './minimap.ts'
 import type { Tally } from './tally.ts'
+import type { Explored } from '../world/explored.ts'
+import type { Level } from '../world/level.ts'
 import type { PlayerHealth } from '../player/health.ts'
 import type { Arsenal } from '../weapons/arsenal.ts'
 import type { Expression } from './face.ts'
@@ -27,10 +30,13 @@ export class ScreenLayer {
   private readonly message = new MessageLine()
   private readonly prompt = new MessageLine(PROMPT_Y)
   private readonly intermission = new Intermission()
+  private readonly minimap: Minimap
   private readonly flash: THREE.Mesh
   private readonly flashMaterial: THREE.MeshBasicMaterial
 
-  constructor() {
+  constructor(level: Level) {
+    this.minimap = new Minimap(level)
+    this.scene.add(this.minimap.mesh)
     this.scene.add(this.hud.mesh)
     this.scene.add(this.message.mesh)
     this.scene.add(this.prompt.mesh)
@@ -70,6 +76,25 @@ export class ScreenLayer {
     this.flash.visible = this.flashMaterial.opacity > 0.002
   }
 
+  /**
+   * The automap. Hidden behind the tally, which covers the whole screen.
+   */
+  updateMinimap(
+    level: Level,
+    explored: Explored,
+    x: number,
+    z: number,
+    yaw: number,
+    charted: number,
+  ): void {
+    this.minimap.update(level, explored, x, z, yaw, charted)
+  }
+
+  /** Wipe the map for a fresh run. */
+  clearMinimap(): void {
+    this.minimap.invalidate()
+  }
+
   /** The level-complete tally, over everything else. */
   showTally(levelName: string, tally: Tally): void {
     this.intermission.show(levelName, tally)
@@ -84,6 +109,7 @@ export class ScreenLayer {
     this.message.dispose()
     this.prompt.dispose()
     this.intermission.dispose()
+    this.minimap.dispose()
     this.flash.geometry.dispose()
     this.flashMaterial.dispose()
   }
