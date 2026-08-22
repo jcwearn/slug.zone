@@ -1,219 +1,184 @@
-import { musicNodes, sharedNoise } from './sfx.ts'
+import * as Tone from 'tone'
+import { audioContext } from './sfx.ts'
 import { buildTrack, midiToHz, stepSeconds, trackSteps, type Track } from './track.ts'
 
 /**
- * The player: turns a `Track` into oscillators.
+ * The player: hands `track.ts` to Tone.js.
  *
- * Scheduled ahead rather than on a timer. A `setInterval` firing a note the
- * instant it is due is at the mercy of whatever else the main thread is doing,
- * and a rhythm section that lurches whenever a Grinder blast spawns eight
- * pellets is worse than no rhythm section. Instead a slow-ish timer wakes up
- * and queues every note falling inside the next fraction of a second at its
- * exact `AudioContext` time, which the audio thread then honours regardless of
- * what the renderer is doing.
+ * Tone owns the timing. Its Transport does the lookahead scheduling a
+ * hand-rolled `setInterval` had to fake, and it does it against the audio
+ * clock -- so the rhythm section does not lurch when a Grinder blast spawns
+ * eight pellets on the same frame.
  *
- * Nothing here is unit-tested -- it is an audio graph, and this repo verifies
+ * Tone is pointed at the AudioContext `sfx.ts` already created rather than
+ * making its own. Two contexts would both need unlocking, and a browser only
+ * hands one out per user gesture.
+ *
+ * Nothing here is unit-tested: it is a synth graph, and this repo verifies
  * those by listening. The composition it plays is in `track.ts`, which is.
  */
 
-/** How far ahead notes are queued, in seconds. */
-const LOOKAHEAD = 0.15
-/** How often the scheduler wakes, in milliseconds. Comfortably under the above. */
-const TICK_MS = 40
+interface Voices {
+  bass: Tone.PolySynth<Tone.Synth>
+  lead: Tone.MonoSynth
+  pad: Tone.PolySynth<Tone.Synth>
+  kick: Tone.MembraneSynth
+  snare: Tone.NoiseSynth
+  hat: Tone.NoiseSynth
+  crash: Tone.NoiseSynth
+  bus: Tone.Gain
+}
 
 const tracks = new Map<string, Track>()
-
+let voices: Voices | null = null
+let parts: Tone.Part[] = []
 let current: Track | null = null
-let timer: ReturnType<typeof setInterval> | null = null
-/** Absolute AudioContext time the next step falls on. */
-let nextTime = 0
-let nextStep = 0
 let enabled = true
 
-/**
- * Tracks are built once and cached.
- *
- * The seed is derived from the id, so `cellar` is the same riff on every
- * machine and in every session -- a level's music being different each time
- * you load it is a bug you cannot reproduce.
- */
 function trackFor(id: string): Track {
   let track = tracks.get(id)
   if (!track) {
-    let hash = 2166136261
-    for (let i = 0; i < id.length; i++) {
-      hash = Math.imul(hash ^ id.charCodeAt(i), 16777619)
-    }
-    track = buildTrack(id, hash >>> 0)
+    track = buildTrack(id)
     tracks.set(id, track)
   }
   return track
 }
 
-/** The rhythm guitar: a square chug with the life choked out of it. */
-function playBass(ac: AudioContext, out: GainNode, at: number, hz: number, velocity: number): void {
-  const osc = ac.createOscillator()
-  osc.type = 'square'
-  osc.frequency.setValueAtTime(hz, at)
+/**
+ * Build the instruments, once.
+ *
+ * Every voice is a synth rather than a sample, which is the same trade the
+ * sound effects make: nothing to host, and it stays in the chip-tune register
+ * the rest of the game is drawn in.
+ */
+function build(): Voices | null {
+  if (voices) return voices
+  const ctx = audioContext()
+  if (!ctx) return null
 
-  // A lowpass slammed shut over 60ms is what a palm mute is: all attack, no
-  // sustain, and almost no note left by the time the next one lands.
-  const filter = ac.createBiquadFilter()
-  filter.type = 'lowpass'
-  filter.Q.value = 6
-  filter.frequency.setValueAtTime(2200, at)
-  filter.frequency.exponentialRampToValueAtTime(320, at + 0.06)
+  // Share the context the effects already unlocked.
+  Tone.setContext(ctx)
 
-  const gain = ac.createGain()
-  gain.gain.setValueAtTime(0.0001, at)
-  gain.gain.exponentialRampToValueAtTime(0.42 * velocity, at + 0.004)
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.075)
+  const bus = new Tone.Gain(0.42).toDestination()
 
-  osc.connect(filter).connect(gain).connect(out)
-  osc.start(at)
-  osc.stop(at + 0.09)
+  // A compressor across the whole mix so the chorus does not simply clip when
+  // six voices land on the same downbeat.
+  const glue = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.003, release: 0.12 })
+  glue.connect(bus)
+
+  // Rhythm guitar: square waves through hard distortion and a lowpass. The
+  // filter is what stops distorted squares turning into white noise up top.
+  const grind = new Tone.Distortion(0.85)
+  const cab = new Tone.Filter({ type: 'lowpass', frequency: 2400, rolloff: -24 })
+  const bass = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'square' },
+    // Almost no sustain: that is what a palm mute is, and it leaves room for
+    // the next note a sixteenth later.
+    envelope: { attack: 0.002, decay: 0.09, sustain: 0.05, release: 0.05 },
+  })
+  bass.maxPolyphony = 8
+  bass.chain(grind, cab, glue)
+
+  // Lead: a single voice with a filter envelope, so each note opens up rather
+  // than just appearing.
+  const leadDrive = new Tone.Distortion(0.35)
+  const leadVerb = new Tone.Reverb({ decay: 2.2, wet: 0.22 })
+  const lead = new Tone.MonoSynth({
+    oscillator: { type: 'sawtooth' },
+    envelope: { attack: 0.01, decay: 0.2, sustain: 0.65, release: 0.25 },
+    filterEnvelope: {
+      attack: 0.02,
+      decay: 0.25,
+      sustain: 0.5,
+      release: 0.4,
+      baseFrequency: 420,
+      octaves: 3,
+    },
+  })
+  lead.chain(leadDrive, leadVerb, glue)
+
+  // Organ: soft triangles, well back in the mix. It is the thing that makes a
+  // riff sound like it is in a cellar rather than in a vacuum.
+  const padVerb = new Tone.Reverb({ decay: 3.5, wet: 0.4 })
+  const pad = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.12, decay: 0.3, sustain: 0.7, release: 0.8 },
+  })
+  pad.maxPolyphony = 8
+  pad.volume.value = -14
+  pad.chain(padVerb, glue)
+
+  const kick = new Tone.MembraneSynth({
+    pitchDecay: 0.03,
+    octaves: 6,
+    envelope: { attack: 0.001, decay: 0.22, sustain: 0, release: 0.1 },
+  })
+  kick.connect(glue)
+
+  const snare = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.14, sustain: 0 },
+  })
+  const snareTone = new Tone.Filter({ type: 'highpass', frequency: 1200 })
+  snare.chain(snareTone, glue)
+
+  const hat = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.03, sustain: 0 },
+  })
+  const hatTone = new Tone.Filter({ type: 'highpass', frequency: 8000 })
+  hat.volume.value = -18
+  hat.chain(hatTone, glue)
+
+  const crash = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 1.4, sustain: 0 },
+  })
+  const crashTone = new Tone.Filter({ type: 'highpass', frequency: 5000 })
+  crash.volume.value = -14
+  crash.chain(crashTone, glue)
+
+  voices = { bass, lead, pad, kick, snare, hat, crash, bus }
+  return voices
 }
 
-/** The lead: a thinner voice an octave up, with a little wobble. */
-function playLead(
-  ac: AudioContext,
-  out: GainNode,
-  at: number,
-  hz: number,
-  velocity: number,
-  seconds: number,
-): void {
-  const osc = ac.createOscillator()
-  osc.type = 'sawtooth'
-  osc.frequency.setValueAtTime(hz, at)
+/** Sixteenths to Tone's bars:beats:sixteenths. */
+const at = (step: number): string =>
+  `${Math.floor(step / 16)}:${Math.floor((step % 16) / 4)}:${step % 4}`
 
-  // A slow detune against itself. Two cents of drift is the difference
-  // between a chip lead and a test tone.
-  const drift = ac.createOscillator()
-  drift.type = 'sine'
-  drift.frequency.value = 5.5
-  const driftAmount = ac.createGain()
-  driftAmount.gain.value = hz * 0.006
-  drift.connect(driftAmount).connect(osc.frequency)
-
-  const filter = ac.createBiquadFilter()
-  filter.type = 'bandpass'
-  filter.frequency.value = hz * 2.2
-  filter.Q.value = 1.4
-
-  const gain = ac.createGain()
-  gain.gain.setValueAtTime(0.0001, at)
-  gain.gain.exponentialRampToValueAtTime(0.13 * velocity, at + 0.01)
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + seconds)
-
-  osc.connect(filter).connect(gain).connect(out)
-  osc.start(at)
-  osc.stop(at + seconds + 0.02)
-  drift.start(at)
-  drift.stop(at + seconds + 0.02)
-}
-
-function playKick(ac: AudioContext, out: GainNode, at: number, velocity: number): void {
-  const osc = ac.createOscillator()
-  osc.type = 'sine'
-  // The pitch drop IS the kick. A steady tone at 50Hz is a hum.
-  osc.frequency.setValueAtTime(150, at)
-  osc.frequency.exponentialRampToValueAtTime(42, at + 0.055)
-
-  const gain = ac.createGain()
-  gain.gain.setValueAtTime(0.7 * velocity, at)
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.1)
-
-  osc.connect(gain).connect(out)
-  osc.start(at)
-  osc.stop(at + 0.11)
-}
-
-function playSnare(ac: AudioContext, out: GainNode, at: number, velocity: number): void {
-  const noise = sharedNoise(ac)
-  if (!noise) return
-  const filter = ac.createBiquadFilter()
-  filter.type = 'highpass'
-  filter.frequency.value = 1400
-
-  const gain = ac.createGain()
-  gain.gain.setValueAtTime(0.34 * velocity, at)
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.1)
-
-  noise.connect(filter).connect(gain).connect(out)
-  noise.start(at)
-  noise.stop(at + 0.12)
-
-  // A little body under the hiss, or it reads as a cymbal rather than a drum.
-  const body = ac.createOscillator()
-  body.type = 'triangle'
-  body.frequency.setValueAtTime(220, at)
-  body.frequency.exponentialRampToValueAtTime(150, at + 0.06)
-  const bodyGain = ac.createGain()
-  bodyGain.gain.setValueAtTime(0.16 * velocity, at)
-  bodyGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.07)
-  body.connect(bodyGain).connect(out)
-  body.start(at)
-  body.stop(at + 0.08)
-}
-
-function playHat(ac: AudioContext, out: GainNode, at: number, velocity: number): void {
-  const noise = sharedNoise(ac)
-  if (!noise) return
-  const filter = ac.createBiquadFilter()
-  filter.type = 'highpass'
-  filter.frequency.value = 7000
-
-  const gain = ac.createGain()
-  gain.gain.setValueAtTime(0.14 * velocity, at)
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.035)
-
-  noise.connect(filter).connect(gain).connect(out)
-  noise.start(at)
-  noise.stop(at + 0.045)
-}
-
-/** Queue everything falling inside the lookahead window. */
-function schedule(): void {
-  const nodes = musicNodes()
-  if (!nodes || !current) return
-  const { ac, out, now } = nodes
-
-  const track = current
+function schedule(track: Track, v: Voices): void {
   const seconds = stepSeconds(track)
-  const total = trackSteps(track)
+  const hz = (pitch: number) => midiToHz(track.root + pitch)
 
-  while (nextTime < now + LOOKAHEAD) {
-    // A step's worth of every voice at once. Iterating the whole track per
-    // step is fine at these sizes and keeps the loop obvious; a track long
-    // enough for that to matter would want an index.
-    for (const note of track.bass) {
-      if (note.step === nextStep) {
-        playBass(ac, out, nextTime, midiToHz(track.root + note.pitch), note.velocity)
-      }
-    }
-    for (const note of track.lead) {
-      if (note.step === nextStep) {
-        playLead(
-          ac,
-          out,
-          nextTime,
-          midiToHz(track.root + note.pitch),
-          note.velocity,
-          note.length * seconds,
-        )
-      }
-    }
-    for (const hit of track.drums) {
-      if (hit.step !== nextStep) continue
-      if (hit.voice === 'kick') playKick(ac, out, nextTime, hit.velocity)
-      else if (hit.voice === 'snare') playSnare(ac, out, nextTime, hit.velocity)
-      else playHat(ac, out, nextTime, hit.velocity)
-    }
-
-    nextTime += seconds
-    nextStep = (nextStep + 1) % total
+  const notePart = <T extends { step: number }>(
+    items: T[],
+    play: (time: number, item: T) => void,
+  ) => {
+    const part = new Tone.Part(
+      (time, item) => play(time, item as T),
+      items.map((item) => [at(item.step), item] as [string, T]),
+    )
+    part.loop = true
+    part.loopEnd = at(trackSteps(track))
+    part.start(0)
+    parts.push(part)
   }
+
+  notePart(track.bass, (time, note) => {
+    v.bass.triggerAttackRelease(hz(note.pitch), note.length * seconds * 0.9, time, note.velocity)
+  })
+  notePart(track.lead, (time, note) => {
+    v.lead.triggerAttackRelease(hz(note.pitch), note.length * seconds * 0.95, time, note.velocity)
+  })
+  notePart(track.pad, (time, note) => {
+    v.pad.triggerAttackRelease(hz(note.pitch), note.length * seconds * 0.98, time, note.velocity)
+  })
+  notePart(track.drums, (time, hit) => {
+    if (hit.voice === 'kick') v.kick.triggerAttackRelease('C1', '8n', time, hit.velocity)
+    else if (hit.voice === 'snare') v.snare.triggerAttackRelease('16n', time, hit.velocity)
+    else if (hit.voice === 'hat') v.hat.triggerAttackRelease('32n', time, hit.velocity)
+    else v.crash.triggerAttackRelease('1n', time, hit.velocity)
+  })
 }
 
 /**
@@ -224,33 +189,28 @@ function schedule(): void {
  * same gesture that unlocks audio.
  */
 export function startMusic(id: string): void {
-  const nodes = musicNodes()
-  if (!nodes) return
-  if (current?.id === id && timer !== null) return
+  const v = build()
+  if (!v) return
+  if (current?.id === id && parts.length > 0) return
 
   stopMusic()
   current = trackFor(id)
   if (!enabled) return
 
-  nextStep = 0
-  // A beat of headroom before the first note, so the opening downbeat is not
-  // scheduled in the past and dropped.
-  nextTime = nodes.now + 0.12
-  schedule()
-  timer = setInterval(schedule, TICK_MS)
+  const transport = Tone.getTransport()
+  transport.bpm.value = current.bpm
+  transport.position = 0
+  schedule(current, v)
+  transport.start('+0.15')
 }
 
-/**
- * Stop the scheduler.
- *
- * Notes already queued play out over the next fraction of a second -- there is
- * no way to unschedule them and no reason to want one.
- */
+/** Stop, and throw away the scheduled parts. */
 export function stopMusic(): void {
-  if (timer !== null) {
-    clearInterval(timer)
-    timer = null
-  }
+  const transport = Tone.getTransport()
+  transport.stop()
+  transport.cancel()
+  for (const part of parts) part.dispose()
+  parts = []
 }
 
 export const isMusicOn = (): boolean => enabled
@@ -266,4 +226,9 @@ export function toggleMusic(): boolean {
     stopMusic()
   }
   return enabled
+}
+
+/** 0..1. */
+export function setMusicVolume(value: number): void {
+  if (voices) voices.bus.gain.value = Math.max(0, Math.min(1, value))
 }

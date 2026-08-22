@@ -4,155 +4,262 @@ import {
   midiToHz,
   SCALE,
   stepSeconds,
+  trackSeconds,
   trackSteps,
   TRITONE,
+  type Note,
   type Track,
 } from './track.ts'
 
 /**
- * The composition is data, so it can be asserted rather than only listened to.
+ * The arrangement, asserted.
  *
- * What is worth holding is the interval content and the rhythm -- the two
- * things that decide whether this reads as the genre or as noise. Whether it
- * is any GOOD is not a thing a test can tell you.
+ * The previous version of this file tested that the notes were in key and that
+ * the snare fell on two and four. Both were true of a piece that sounded like
+ * nothing, because those are properties a good tune HAS rather than properties
+ * that MAKE one. What is worth holding is the structure -- that the piece is
+ * long, that its sections differ from each other, and that the tune is a shape
+ * that returns -- because that is what was actually missing.
+ *
+ * Whether it is any good is still not something a test can tell you.
  */
 
-const track = buildTrack('cellar', 0xdead)
+const track = buildTrack('cellar')
 const inScale = (pitch: number) =>
   SCALE.includes((((pitch % 12) + 12) % 12) as (typeof SCALE)[number])
 
-describe('buildTrack', () => {
-  it('is deterministic for a seed', () => {
-    // The whole reason it is seeded: a riff that changes on every page load is
-    // not a track, and nothing below could be asserted about it.
-    expect(buildTrack('cellar', 0xdead)).toEqual(buildTrack('cellar', 0xdead))
+/** Notes of a channel falling inside a named section. */
+function inSection(source: Track, notes: Note[], name: string): Note[] {
+  const section = source.sections.find((s) => s.name === name)
+  if (!section) throw new Error(`no section ${name}`)
+  const from = section.bar * source.stepsPerBar
+  const to = from + section.bars * source.stepsPerBar
+  return notes.filter((n) => n.step >= from && n.step < to)
+}
+
+describe('the arrangement', () => {
+  it('runs long enough that the loop is not the point', () => {
+    // The complaint that produced this rewrite: the old track came round every
+    // 10.9 seconds, which is short enough to hear as a loop rather than as
+    // music. Anything under a minute is back in that territory.
+    expect(trackSeconds(track)).toBeGreaterThan(90)
   })
 
-  it('actually uses the seed', () => {
-    expect(buildTrack('cellar', 1)).not.toEqual(buildTrack('cellar', 2))
+  it('is the same piece every time', () => {
+    // Nothing is seeded any more, so this is a statement about there being no
+    // randomness left rather than about a seed working.
+    expect(buildTrack('cellar')).toEqual(buildTrack('cellar'))
   })
 
-  it('uses the seed to choose PITCHES, not just rhythms', () => {
-    // The weaker version of this compared two whole tracks, which differ on
-    // rhythm alone -- so a generator whose every chosen note was the SAME
-    // pitch passed it, because the stab rhythm still moved with the seed.
+  it('covers every bar with a section, back to back and in order', () => {
+    // A gap would be a bar of unexplained near-silence; an overlap would be two
+    // sections writing over each other.
+    let bar = 0
+    for (const section of track.sections) {
+      expect(section.bar, `${section.name} does not follow the last`).toBe(bar)
+      bar += section.bars
+    }
+    expect(bar, 'sections do not add up to the whole piece').toBe(track.bars)
+  })
+
+  it('gives the chorus a different riff from the verse', () => {
+    // The whole reason for having sections. Same notes in both and this is an
+    // eight-bar loop wearing a longer coat.
+    const shape = (notes: Note[]) =>
+      notes
+        .slice(0, 16)
+        .map((n) => `${n.pitch}:${n.length}`)
+        .join(' ')
+    expect(shape(inSection(track, track.bass, 'verse'))).not.toBe(
+      shape(inSection(track, track.bass, 'chorus')),
+    )
+  })
+
+  it('opens the rhythm out for the chorus rather than just playing more', () => {
+    // A chorus is bigger because the notes are longer, not because there are
+    // more of them.
+    const verse = inSection(track, track.bass, 'verse')
+    const chorus = inSection(track, track.bass, 'chorus')
+    const mean = (notes: Note[]) => notes.reduce((n, x) => n + x.length, 0) / notes.length
+    expect(mean(chorus)).toBeGreaterThan(mean(verse))
+    expect(chorus.length).toBeLessThan(verse.length)
+  })
+
+  it('leaves the intro and the breakdown quieter than the choruses', () => {
+    const density = (name: string) => {
+      const section = track.sections.find((s) => s.name === name)!
+      return inSection(track, track.bass, name).length / section.bars
+    }
+    expect(density('intro'), 'the intro has no rhythm guitar at all').toBe(0)
+    expect(density('break')).toBeLessThan(density('chorus'))
+  })
+
+  it('holds the lead back and brings it in for the choruses', () => {
+    expect(inSection(track, track.lead, 'pre'), 'the climb should be riff alone').toHaveLength(0)
+    expect(inSection(track, track.lead, 'break'), 'a breakdown breaks down').toHaveLength(0)
+    expect(inSection(track, track.lead, 'chorus').length).toBeGreaterThan(0)
+    expect(inSection(track, track.lead, 'final').length).toBeGreaterThan(0)
+  })
+})
+
+describe('the tune', () => {
+  const hook = inSection(track, track.lead, 'chorus')
+
+  it('is a shape rather than a scatter of notes', () => {
+    // The old lead picked scale degrees at random, which produced a set of
+    // pitches with no contour. A tune has a peak, and it is not at either end.
+    const pitches = hook.map((n) => n.pitch)
+    const peak = pitches.indexOf(Math.max(...pitches))
+    expect(peak).toBeGreaterThan(0)
+    expect(peak).toBeLessThan(pitches.length - 1)
+  })
+
+  it('comes back to where it started', () => {
+    // A melody that ends somewhere else is a fragment.
+    expect(hook[hook.length - 1].pitch % 12).toBe(0)
+  })
+
+  it('repeats its opening phrase, which is what makes it memorable', () => {
+    // Phrases one and three open on the same three notes. Nothing random can
+    // do this, and it is the single biggest difference between the two
+    // versions of this file.
     //
-    // The real track draws 14 distinct pitches; a generator picking one
-    // constant manages 6. The bound sits between them rather than just above
-    // zero, which is where it was when it proved nothing.
-    const pitches = new Set([...track.bass, ...track.lead].map((n) => n.pitch))
-    expect(pitches.size, 'the riff keeps picking the same note').toBeGreaterThan(8)
+    // Scoped to ONE statement of the tune. Across the whole chorus the opening
+    // trivially recurs, because the chorus plays the tune twice -- so the
+    // unscoped version of this passed for a melody whose phrases had nothing
+    // to do with each other.
+    const chorus = track.sections.find((s) => s.name === 'chorus')!
+    const statement = hook
+      .filter((n) => n.step < (chorus.bar + 8) * track.stepsPerBar)
+      .map((n) => n.pitch)
+
+    const opening = statement.slice(0, 3)
+    const rest = statement.slice(3)
+    const repeats = rest.some((_, i) => opening.every((pitch, j) => rest[i + j] === pitch))
+    expect(repeats, 'the tune never states its opening twice').toBe(true)
   })
 
-  it('keeps every pitch in the scale', () => {
-    // One note from outside it and the riff stops being in a key.
-    const strays = [...track.bass, ...track.lead].filter((n) => !inScale(n.pitch))
+  it('climbs higher the second time it opens', () => {
+    // Within ONE statement of the tune, not across the chorus: the chorus
+    // plays the whole eight-bar tune twice, so halving it compares two
+    // identical copies and would pass for a melody that never moved at all.
+    const chorus = track.sections.find((s) => s.name === 'chorus')!
+    const statement = hook.filter((n) => n.step < (chorus.bar + 8) * track.stepsPerBar)
+    const half = Math.floor(statement.length / 2)
+    const peakOf = (notes: Note[]) => Math.max(...notes.map((n) => n.pitch))
+
+    expect(statement.length, 'the tune should fill eight bars').toBeGreaterThan(8)
+    expect(peakOf(statement.slice(half))).toBeGreaterThan(peakOf(statement.slice(0, half)))
+  })
+
+  it('sits clear of the rhythm guitar', () => {
+    // Two voices in one octave fight rather than stack.
+    expect(Math.min(...hook.map((n) => n.pitch))).toBeGreaterThan(
+      Math.max(...track.bass.map((n) => n.pitch)),
+    )
+  })
+})
+
+describe('the notes themselves', () => {
+  it('stay in the scale', () => {
+    const strays = [...track.bass, ...track.lead, ...track.pad].filter((n) => !inScale(n.pitch))
     expect(
       strays.map((n) => `${n.pitch}@${n.step}`),
       'pitches outside the scale',
     ).toEqual([])
   })
 
-  it('carries the two intervals the genre is built on', () => {
-    // A flattened second and a tritone. Without them this is a minor riff
-    // played fast, which is a different genre entirely.
-    expect(SCALE).toContain(1)
-    expect(SCALE).toContain(TRITONE)
-    const pitches = new Set([...track.bass, ...track.lead].map((n) => ((n.pitch % 12) + 12) % 12))
-    expect(pitches.has(TRITONE) || pitches.has(1), 'the riff never leaves the root').toBe(true)
+  it('lean on the tritone, which is what makes it sound like this', () => {
+    expect(
+      track.bass.filter((n) => n.pitch % 12 === TRITONE).length,
+      'the riff never touches it',
+    ).toBeGreaterThan(0)
+    expect(
+      track.lead.filter((n) => n.pitch % 12 === TRITONE).length,
+      'the tune never touches it',
+    ).toBeGreaterThan(0)
   })
 
-  it('stays inside its own loop', () => {
-    // A note hanging past the last step overlaps the top of the loop, which
-    // is audible as a stumble every eight bars.
+  it('never asks a monophonic voice for two notes at once', () => {
+    // The bass and the lead are single voices. Two notes on one step is one of
+    // them being silently dropped, and which one depends on scheduling order.
+    for (const channel of ['bass', 'lead'] as const) {
+      const steps = track[channel].map((n) => n.step)
+      expect(new Set(steps).size, `overlapping ${channel} notes`).toBe(steps.length)
+    }
+  })
+
+  it('never lets a monophonic note run into the next one', () => {
+    // A note longer than the gap before the next is a voice cut off
+    // mid-envelope, which reads as a stutter rather than as legato.
+    for (const channel of ['bass', 'lead'] as const) {
+      const notes = [...track[channel]].sort((a, b) => a.step - b.step)
+      for (let i = 1; i < notes.length; i++) {
+        expect(
+          notes[i - 1].step + notes[i - 1].length,
+          `${channel} note at ${notes[i - 1].step} overruns the next`,
+        ).toBeLessThanOrEqual(notes[i].step)
+      }
+    }
+  })
+
+  it('does let the organ play chords, because that is what it is for', () => {
+    const steps = track.pad.map((n) => n.step)
+    expect(new Set(steps).size, 'the pad is playing one note at a time').toBeLessThan(steps.length)
+  })
+
+  it('stays inside its own length', () => {
     const end = trackSteps(track)
-    for (const note of [...track.bass, ...track.lead]) {
-      expect(note.step, 'note starts past the loop').toBeLessThan(end)
-      expect(note.step + note.length, 'note runs past the loop').toBeLessThanOrEqual(end)
+    for (const note of [...track.bass, ...track.lead, ...track.pad]) {
+      expect(note.step + note.length, 'note runs past the end').toBeLessThanOrEqual(end)
     }
     for (const hit of track.drums) expect(hit.step).toBeLessThan(end)
   })
+})
 
-  it('lands a kick on the downbeat of every bar', () => {
-    // What makes the loop join. A seam with no kick on it is heard as a skip.
-    const kicks = new Set(track.drums.filter((d) => d.voice === 'kick').map((d) => d.step))
-    for (let bar = 0; bar < track.bars; bar++) {
-      expect(kicks.has(bar * track.stepsPerBar), `bar ${bar} has no downbeat`).toBe(true)
+describe('the drums', () => {
+  it('leave the first bar empty so the intro is an intro', () => {
+    expect(track.drums.filter((d) => d.step < track.stepsPerBar)).toHaveLength(0)
+  })
+
+  it('crash on the downbeat of the sections that arrive', () => {
+    const crashes = new Set(track.drums.filter((d) => d.voice === 'crash').map((d) => d.step))
+    for (const name of ['verse', 'chorus', 'final']) {
+      const section = track.sections.find((s) => s.name === name)!
+      expect(crashes.has(section.bar * track.stepsPerBar), `${name} arrives without one`).toBe(true)
     }
   })
 
-  it('puts the snare on two and four', () => {
-    const snares = track.drums.filter((d) => d.voice === 'snare').map((d) => d.step % 16)
-    // The last bar is a blast beat, so it is allowed to break the rule -- but
-    // the bars before it are not.
-    const backbeat = track.drums
-      .filter((d) => d.voice === 'snare' && d.step < (track.bars - 1) * track.stepsPerBar)
-      .map((d) => d.step % 16)
-    expect(new Set(backbeat)).toEqual(new Set([4, 12]))
-    expect(snares.length).toBeGreaterThan(backbeat.length)
+  it('put the backbeat on two and four through the verse', () => {
+    const verse = track.sections.find((s) => s.name === 'verse')!
+    const snares = track.drums
+      .filter(
+        (d) =>
+          d.voice === 'snare' &&
+          d.step >= verse.bar * track.stepsPerBar &&
+          d.step < (verse.bar + verse.bars) * track.stepsPerBar,
+      )
+      .map((d) => d.step % track.stepsPerBar)
+    expect(new Set(snares)).toEqual(new Set([4, 12]))
   })
 
-  it('ends on a blast beat', () => {
-    const last = (track.bars - 1) * track.stepsPerBar
-    const inLast = track.drums.filter((d) => d.voice === 'snare' && d.step >= last)
-    expect(inLast.length, 'the last bar should stop breathing').toBeGreaterThan(4)
-  })
-
-  it('holds the lead back until the riff is established', () => {
-    const half = (track.bars / 2) * track.stepsPerBar
-    expect(track.lead.length).toBeGreaterThan(0)
-    expect(Math.min(...track.lead.map((n) => n.step))).toBeGreaterThanOrEqual(half)
-  })
-
-  it('keeps the lead above the bass', () => {
-    // Two voices in the same octave on a chip fight rather than stack.
-    expect(Math.min(...track.lead.map((n) => n.pitch))).toBeGreaterThan(
-      Math.max(...track.bass.map((n) => n.pitch)),
-    )
-  })
-
-  it('chugs on the root, but does leave it', () => {
-    // Both halves, and the second one matters as much. A rhythm guitar that
-    // wanders is a lead; one that never moves at all is a metronome, and the
-    // one-sided version of this test passed happily for a bass line that was
-    // 128 copies of the same note.
-    const roots = track.bass.filter((n) => n.pitch === 0).length
-    const ratio = roots / track.bass.length
-    expect(ratio, 'the riff wanders').toBeGreaterThan(0.6)
-    expect(ratio, 'the riff never moves').toBeLessThan(0.95)
-
-    // And the gallop specifically has to stab, not just the walk. The walk
-    // only ever plays 3, 1 and 0, so a bass line that never left the root
-    // still showed three distinct pitches and a ratio under the bound above --
-    // which is exactly how a chugging metronome passed for a riff.
-    const beyondTheWalk = track.bass.filter((n) => ![0, 1, 3].includes(n.pitch))
-    expect(beyondTheWalk.length, 'every note is the root or the walk').toBeGreaterThan(0)
-  })
-
-  it('never plays two bass notes on the same step', () => {
-    // One monophonic voice. Two notes at once is a chip channel being asked
-    // to do something it cannot, and one of them is silently lost.
-    const steps = track.bass.map((n) => n.step)
-    expect(new Set(steps).size, 'overlapping bass notes').toBe(steps.length)
-  })
-
-  it('is neither silent nor solid', () => {
-    const end = trackSteps(track)
-    expect(track.bass.length).toBeGreaterThan(end * 0.4)
-    expect(track.bass.length).toBeLessThan(end)
-  })
-
-  it('scales with the bars it is asked for', () => {
-    const short = buildTrack('cellar', 1, 4)
-    expect(trackSteps(short)).toBe(4 * short.stepsPerBar)
-    expect(Math.max(...short.bass.map((n) => n.step))).toBeLessThan(trackSteps(short))
+  it('build into the chorus', () => {
+    // The bars before a chorus carry more snare than an ordinary bar, or the
+    // chorus simply starts rather than arriving.
+    const snaresIn = (bar: number) =>
+      track.drums.filter(
+        (d) =>
+          d.voice === 'snare' &&
+          d.step >= bar * track.stepsPerBar &&
+          d.step < (bar + 1) * track.stepsPerBar,
+      ).length
+    expect(snaresIn(31), 'the bar before the chorus').toBeGreaterThan(snaresIn(24))
   })
 })
 
 describe('timing', () => {
   it('reads a sixteenth off the tempo', () => {
-    // 176bpm is 0.34s a beat, so a sixteenth is a shade over 85ms.
-    expect(stepSeconds(track)).toBeCloseTo(60 / 176 / 4, 6)
+    expect(stepSeconds(track)).toBeCloseTo(60 / 168 / 4, 6)
     expect(stepSeconds({ ...track, bpm: 120 } as Track)).toBeCloseTo(0.125, 6)
   })
 
@@ -172,10 +279,8 @@ describe('midiToHz', () => {
     expect(midiToHz(57)).toBeCloseTo(220, 6)
   })
 
-  it('puts the root down where a rhythm guitar lives', () => {
-    // E1, around 41Hz. Up an octave it stops being felt and starts being a
-    // bass line, which is a different instrument.
-    expect(midiToHz(track.root)).toBeGreaterThan(35)
-    expect(midiToHz(track.root)).toBeLessThan(50)
+  it('puts the root where a rhythm guitar lives', () => {
+    expect(midiToHz(track.root)).toBeGreaterThan(70)
+    expect(midiToHz(track.root)).toBeLessThan(100)
   })
 })

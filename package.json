@@ -18,7 +18,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "tone": "^15.1.22"
   },
   "devDependencies": {
     "@types/node": "26.2.0",
