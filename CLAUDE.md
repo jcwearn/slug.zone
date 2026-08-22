@@ -58,6 +58,20 @@ punched in it, and the corners must actually be cleared — because fixing one o
 those is how the other got broken. The private reference photo is not in this
 repo and must stay out; only the generated sheet is committed.
 
+**A new enemy type is not a new colour.** `buildEnemyView` branches on
+`def.shape`; a type that reuses another's body is a reskin however different
+its numbers are, because at 320x200 through fog the silhouette is nearly all
+the player gets. `render.test.ts` iterates `ENEMIES`, so every new type
+inherits the floor-clearance property automatically.
+
+**`Intent.velocity` is signed, and attacking beats retreating.** Negative
+velocity walks the line to the player backwards — a kiter giving ground without
+turning its back. The FSM tests the attack branch first on purpose: a kiter
+that retreats INSTEAD of attacking reverses into a wall and stays there
+refusing to shoot, turning the most dangerous thing in the room into a free
+kill. Armour is likewise applied at the shot rather than in `damage`, because
+it is the only rule that depends on where the shot came from.
+
 **Door state lives on the `Cell`, not on `cell.door`.** `parseLevel` copies the
 legend spec shallowly, so every `D` cell would otherwise share one object -- the
 one the level module exports, and the one every other parse gets. `world/doors.ts`

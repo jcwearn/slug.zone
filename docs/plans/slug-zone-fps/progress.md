@@ -12,7 +12,7 @@
 | G1. World & movement          | Complete        | 2026-08-22 | Level format, collision, DDA raycast, E1M1                                               |
 | G2. Weapons                   | Complete        | 2026-08-22 | Salt Shaker + Grinder, tracers, procedural SFX                                           |
 | G3. Enemies wave 1            | Complete        | 2026-08-22 | Grub + Spitter, shared FSM, separation, googly eyes                                      |
-| G4. Enemies wave 2            | Not Started     | —          | Five more types; silhouettes to be designed as a set                                     |
+| G4. Enemies wave 2            | Complete        | 2026-08-22 | Slimebloat, Banana Brute, Shellback; standoff, charge, death burst, directional armour   |
 | G5. HUD, pickups, progression | Complete        | 2026-08-22 | Pickups, keycards, doors, secrets, exit, Doom tally, best time in localStorage           |
 | G6. Content (E1M2–E1M5)       | Not Started     | —          | —                                                                                        |
 | G7. Boss                      | Not Started     | —          | —                                                                                        |
@@ -31,32 +31,53 @@ production, every other branch gets `<branch>.slug-zone.pages.dev`.
 `slugzone/slugzone.github.io`, a repo owned by a separate account we hold only
 write access on. Nothing in this repo affects it.
 
-**E1M1 is now a level you can finish.** Ten kinds of pickup, three keycards, the
+**E1M1 is a level you can finish, with five kinds of slug in it.** Ten kinds of pickup, three keycards, the
 door and the vault, the secret, and an intermission tally against the 90-second
 par with a best time that survives a reload. All 168 walkable cells are
 reachable in play; before the doors opened, 44 of them were not.
 
-484 tests, 30 files. `npm run format:check && npm run lint && npm run typecheck &&
+550 tests, 31 files. `npm run format:check && npm run lint && npm run typecheck &&
 npm test && npm run build` is what CI runs, in that order.
 
 ## Next up, in the order I would do it
 
-1. **G4 enemies.** Five more types. Design the silhouettes as a set of seven
-   rather than one at a time — the Grub and the Spitter already read as a pair
-   because they punish opposite habits, and the remaining five should extend
-   that rather than each be invented alone.
-2. **G6 content.** E1M2–E1M5. The level tests are now strong enough to author
+1. **G6 content.** E1M2–E1M5. The level tests are now strong enough to author
    against: they hold that a level parses, is completable **with the keys it
    actually gives you**, strands nothing, buries no entity, reaches every
-   secret, and authors no doorway two cells wide.
+   secret, signs every exit, and authors no doorway two cells wide. The exit
+   currently loops back to E1M1, so the first thing G6 needs is a level
+   registry for it to advance through.
+2. **More enemies, if the levels want them.** G4 shipped five types rather than
+   seven on purpose. Decide against real level layouts whether the roster is
+   short, rather than filling a quota.
 3. **Phase 4 or the DNS cutover.** The interim landing page on the old GitHub
    Pages site was deferred because pointing PLAY at a spinning cube would have
-   advertised something that did not exist. That is no longer true — the game
-   is a game. Worth deciding whether to do it or go straight to the cutover.
+   advertised something that did not exist. That is no longer true.
 
 ## Handoff notes
 
 ### Things that will bite you
+
+**A new enemy type is not a new colour.** `buildEnemyView` branches on
+`def.shape` and each shape returns where its eyes belong. At 320x200 through
+fog the silhouette is very nearly all the player gets, so a type that reuses
+another's body is a reskin however different its numbers are. `render.test.ts`
+iterates `ENEMIES`, so every new type inherits the floor-clearance property for
+free -- and will fail the moment a body dips below y=0.
+
+**`Intent.velocity` is signed.** Negative walks the line to the player
+backwards, which is how a Spitter gives ground without turning its back.
+Anything reading it must multiply rather than test it for truthiness.
+
+**Attacking is tested before retreating.** A kiter that backs off INSTEAD of
+attacking reverses into a wall and stays there refusing to shoot, so the most
+dangerous thing in the room becomes a free kill by walking at it. It gives
+ground between shots, never instead of them.
+
+**Armour is applied at the shot, not in `damage`.** It is the only rule that
+depends on where the shot came FROM, and the mind has no idea where the player
+is standing. An armoured hit also has to sound different -- a creature soaking
+nine tenths of every shot while still sounding wet reads as a broken weapon.
 
 **`cell.door` is shared between every door in the level, and between parses.**
 `parseLevel` copies the legend spec shallowly, so every `D` cell held the same
