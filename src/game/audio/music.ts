@@ -1,5 +1,4 @@
 import * as Tone from 'tone'
-import { audioContext } from './sfx.ts'
 import { buildTrack, midiToHz, stepSeconds, trackSteps, type Track } from './track.ts'
 
 /**
@@ -10,9 +9,12 @@ import { buildTrack, midiToHz, stepSeconds, trackSteps, type Track } from './tra
  * clock -- so the rhythm section does not lurch when a Grinder blast spawns
  * eight pellets on the same frame.
  *
- * Tone is pointed at the AudioContext `sfx.ts` already created rather than
- * making its own. Two contexts would both need unlocking, and a browser only
- * hands one out per user gesture.
+ * Tone keeps its own AudioContext, separate from the one the sound effects
+ * run on, and is started through `Tone.start()` -- the path its documentation
+ * describes. Handing it somebody else's context instead is one line shorter
+ * and put the whole game behind whether that worked: it runs inside the
+ * click-to-play handler, so anything that threw there took pointer lock with
+ * it and the button appeared to stop working.
  *
  * Nothing here is unit-tested: it is a synth graph, and this repo verifies
  * those by listening. The composition it plays is in `track.ts`, which is.
@@ -34,6 +36,10 @@ let voices: Voices | null = null
 let parts: Tone.Part[] = []
 let current: Track | null = null
 let enabled = true
+/** Set once the synth graph has failed, so it is not retried every level. */
+let broken = false
+/** Bumped by every start, so a slow one cannot schedule over a newer one. */
+let generation = 0
 
 function trackFor(id: string): Track {
   let track = tracks.get(id)
@@ -53,11 +59,7 @@ function trackFor(id: string): Track {
  */
 function build(): Voices | null {
   if (voices) return voices
-  const ctx = audioContext()
-  if (!ctx) return null
-
-  // Share the context the effects already unlocked.
-  Tone.setContext(ctx)
+  if (broken) return null
 
   const bus = new Tone.Gain(0.42).toDestination()
 
@@ -188,28 +190,76 @@ function schedule(track: Track, v: Voices): void {
  * sound that fails must never take gameplay down with it. Call it from the
  * same gesture that unlocks audio.
  */
-export function startMusic(id: string): void {
-  const v = build()
-  if (!v) return
-  if (current?.id === id && parts.length > 0) return
-
+/** Give up on music, loudly enough to be reported and quietly enough to play on. */
+function fail(error: unknown): void {
+  // Logged rather than swallowed: silence with no explanation is the hardest
+  // kind of bug to report.
+  console.error('music failed; continuing without it', error)
+  broken = true
   stopMusic()
-  current = trackFor(id)
-  if (!enabled) return
-
-  const transport = Tone.getTransport()
-  transport.bpm.value = current.bpm
-  transport.position = 0
-  schedule(current, v)
-  transport.start('+0.15')
 }
 
-/** Stop, and throw away the scheduled parts. */
+/**
+ * Start a track, or switch to another one.
+ *
+ * Nothing here may throw. It runs inside the click-to-play handler, and a
+ * soundtrack that cannot start is not a reason for the game not to.
+ */
+export function startMusic(id: string): void {
+  if (broken) return
+  try {
+    if (current?.id === id && parts.length > 0) return
+    stopMusic()
+    current = trackFor(id)
+    if (!enabled) return
+
+    const track = current
+    const mine = ++generation
+    // Resuming is asynchronous, so the rest hangs off it. `Tone.start()` has
+    // to be called from a user gesture, which the click that took pointer lock
+    // is -- the same gesture the sound effects are unlocked by.
+    void Tone.start()
+      .then(() => {
+        if (mine !== generation) return
+        begin(track)
+      })
+      .catch(fail)
+  } catch (error) {
+    fail(error)
+  }
+}
+
+function begin(track: Track): void {
+  try {
+    const v = build()
+    if (!v) return
+    const transport = Tone.getTransport()
+    transport.bpm.value = track.bpm
+    transport.position = 0
+    schedule(track, v)
+    transport.start('+0.1')
+  } catch (error) {
+    fail(error)
+  }
+}
+
+/** Stop, and throw away the scheduled parts. Also never throws. */
 export function stopMusic(): void {
-  const transport = Tone.getTransport()
-  transport.stop()
-  transport.cancel()
-  for (const part of parts) part.dispose()
+  generation++
+  try {
+    const transport = Tone.getTransport()
+    transport.stop()
+    transport.cancel()
+  } catch {
+    // The transport belongs to a context that may never have come up.
+  }
+  for (const part of parts) {
+    try {
+      part.dispose()
+    } catch {
+      // Already gone.
+    }
+  }
   parts = []
 }
 
@@ -217,6 +267,7 @@ export const isMusicOn = (): boolean => enabled
 
 /** Toggle, and return whether it is now on. */
 export function toggleMusic(): boolean {
+  if (broken) return false
   enabled = !enabled
   if (enabled) {
     const id = current?.id

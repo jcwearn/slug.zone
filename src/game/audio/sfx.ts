@@ -40,19 +40,6 @@ export function setSfxVolume(value: number): void {
 }
 
 /**
- * The raw context, for Tone.js.
- *
- * The music runs on Tone rather than on hand-built oscillators, and it is
- * pointed at THIS context rather than making its own: two contexts would both
- * need unlocking, and a browser only hands one out per user gesture. Tone
- * builds its own chain to the destination, so the effects master here is
- * untouched and the two balance independently.
- */
-export function audioContext(): AudioContext | null {
-  return ctx
-}
-
-/**
  * Hands back non-null references, or null when audio is not up yet.
  *
  * A `ctx is AudioContext` predicate cannot work here: a type predicate has to

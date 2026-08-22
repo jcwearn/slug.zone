@@ -183,12 +183,33 @@ export class Input {
 
   private onLockChange = () => {
     const nowEngaged = document.pointerLockElement === this.canvas
-    if (nowEngaged && !this.engaged) this.onEngage?.()
+    const engaging = nowEngaged && !this.engaged
+
+    // State first, callback second, and the callback cannot throw out of here.
+    //
+    // `onEngage` is where everything that needs a user gesture happens --
+    // unlocking audio, starting the music -- and it used to run BEFORE
+    // `engaged` was set. So anything that threw in there left `engaged` false
+    // for good: pointer lock held, mouse captured, and the loop bailing out
+    // every frame to put the click-to-play gate back up. The game looked like
+    // the button had simply stopped working, and no amount of clicking fixed
+    // it because the lock was already taken.
+    //
+    // Input's job is input. It must not be taken down by something that
+    // merely wanted to know when input started.
     this.engaged = nowEngaged
     if (!nowEngaged) {
       this.held.clear()
       this.usePressed = false
       this.mutePressed = false
+    }
+
+    if (engaging) {
+      try {
+        this.onEngage?.()
+      } catch (error) {
+        console.error('engage handler failed; carrying on without it', error)
+      }
     }
   }
 
