@@ -1,176 +1,77 @@
 /**
- * The HUD portrait: a 32x32 pixel-art face, hand-drawn as a character grid.
+ * The HUD portrait, sampled from a sprite sheet.
  *
- * Stored the way levels are, as rows of legend characters, because that is the
- * only representation anyone can edit afterwards. A face assembled from
- * fillRect calls is write-once -- nobody moves an eyebrow by adjusting rect
- * coordinates -- whereas this can be nudged a pixel at a time by eye.
+ * Previously this was a hand-drawn character grid. Three attempts at that
+ * never got past "generic person with a moustache" -- at 32x32 with a
+ * hand-picked ramp there is simply not enough fidelity to look like anyone in
+ * particular. The sheet is the artwork itself, downsampled to 36x41 per frame
+ * and quantised to a 48-colour palette shared across all frames, so the face
+ * cannot shift hue between damage states.
  *
- * Three things carry the likeness, and earlier versions got all three wrong:
+ * Sheet layout, 6 columns by 6 rows of 36x41 frames:
  *
- *  - NO outline. The hair is the silhouette. Ringing the head in near-black
- *    flattens it into a sticker, which is what the first two attempts did.
- *  - Curly hair, drawn with three auburn values scattered rather than a solid
- *    block with a highlight edge.
- *  - Round wire glasses, which are the single most identifying feature and
- *    were missing entirely.
- *
- * Form comes from the tonal ramp, not the resolution: five skin values, three
- * hair values, and a separate beard tone, so the brow ridge, nose and jaw are
- * modelled rather than outlined.
- *
- * The likeness is drawn from reference imagery's features. No image data is
- * embedded here or anywhere else in this repository -- the grid is characters.
+ *   col 0 neutral   col 1 snarl   col 2 hurt
+ *   col 3 look left col 4 look right
+ *   rows 0-4 are increasing damage; row 5 col 2 is the death frame.
  */
 
-export const FACE_WIDTH = 32
-export const FACE_HEIGHT = 32
+export const FRAME_WIDTH = 36
+export const FRAME_HEIGHT = 41
+const SHEET_COLS = 6
+
+export type Expression = 'neutral' | 'snarl' | 'hurt' | 'left' | 'right'
+
+const COLUMN: Record<Expression, number> = {
+  neutral: 0,
+  snarl: 1,
+  hurt: 2,
+  left: 3,
+  right: 4,
+}
+
+/** Where the death frame lives; row 5 only has three frames. */
+const DEAD = { col: 2, row: 5 }
+
+/** Top-left of a frame within the sheet, in pixels. */
+export function frameOffset(bucket: number, expression: Expression): { x: number; y: number } {
+  if (bucket >= 5) {
+    return { x: DEAD.col * FRAME_WIDTH, y: DEAD.row * FRAME_HEIGHT }
+  }
+  const row = Math.max(0, Math.min(4, Math.floor(bucket)))
+  const col = COLUMN[expression] ?? 0
+  return { x: col * FRAME_WIDTH, y: row * FRAME_HEIGHT }
+}
+
+export const sheetWidth = SHEET_COLS * FRAME_WIDTH
 
 /**
- * Legend:
- *   ' ' transparent
- *   1 hair dark    2 hair mid    3 hair highlight
- *   B brow
- *   d skin deep shadow   s skin shadow   m skin mid   h skin light
- *   F glasses frame   G lens   W eye white   p pupil
- *   M moustache    u beard    K mouth    T lower lip
- *   C shirt
- */
-const BASE: string[] = [
-  '          111211121111          ',
-  '       111211112111211121       ',
-  '     1121112111211112111211     ',
-  '    112111211121112111211121    ',
-  '   11211121112111211121112111   ',
-  '   11121112111211121112111211   ',
-  '   111hhhhhhhhhhhhhhhhhhhh111   ',
-  '   11hhhhhhhhhhhhhhhhhhhhhh11   ',
-  '   11hhhhhhhhhhhhhhhhhhhhhh11   ',
-  '   11hBBBBBhhhhhhhhBBBBBhhh11   ',
-  '   11hBBBBBhhhhhhhhBBBBBhhh11   ',
-  '   11hhFFFFhhhhhhhhFFFFhhhh11   ',
-  '   11hFGGGGFhFFFFhFGGGGFhhh11   ',
-  '   11hFGpGGFhhhhhhFGpGGFhhh11   ',
-  '   11hFGGGGFhhsshhFGGGGFhhh11   ',
-  '   11hhFFFFhhhsshhhFFFFhhhh11   ',
-  '   11hhhhhhhhhssshhhhhhhhhh11   ',
-  '   11hhhhhhhhdssssdhhhhhhhh11   ',
-  '   11hhhhhhhddssssddhhhhhhh11   ',
-  '   11hhhhhhhhddddddhhhhhhhh11   ',
-  '   11hhhhMMMMMMMMMMMMMMhhhh11   ',
-  '   11hhhMMMMMMMMMMMMMMMMhhh11   ',
-  '   11hhhhMMMMMMMMMMMMMMhhhh11   ',
-  '   11hhhhhhhKKKKKKKKhhhhhhh11   ',
-  '   11hhhhhhhhTTTTTThhhhhhhh11   ',
-  '    1hhhhhhhhhhhhhhhhhhhhhh1    ',
-  '    1uhhhhhhhhhhhhhhhhhhhhu1    ',
-  '     1uuhhhhhhhhhhhhhhhhuu1     ',
-  '      uuuhhhhhhhhhhhhhhuuu      ',
-  '       uuuuhhhhhhhhhhuuuu       ',
-  '           ssssssssss           ',
-  '      CCCCCCCCCCCCCCCCCCCC      ',
-]
-
-const PALETTE: Record<string, string> = {
-  '1': '#3a2418',
-  '2': '#4f3222',
-  '3': '#66432c',
-  B: '#2c1b11',
-  F: '#8d7f5e',
-  G: '#c2bcae',
-  W: '#efe9dc',
-  p: '#1d1209',
-  M: '#4b2f1d',
-  K: '#3b1a11',
-  T: '#94573f',
-  C: '#4a7fae',
-}
-
-/**
- * Skin and beard ramps per damage bucket, healthy through dead.
+ * Loads the sheet once and reports when it is ready.
  *
- * The whole ramp shifts together rather than one tone. Moving a single value
- * leaves the face patchy -- a drained cheek beside an undrained jaw -- which
- * reads as a rendering fault rather than as injury.
+ * The HUD draws on frame one, well before an image can decode, so callers have
+ * to cope with `image` being null and redraw when `onReady` fires. Drawing a
+ * blank rather than blocking is the right trade: a missing portrait for two
+ * frames is invisible, and waiting on the network before the first render is
+ * not.
  */
-const RAMPS: Record<string, string[]> = {
-  d: ['#6f4229', '#693c25', '#613621', '#57301d', '#492818', '#463c33'],
-  s: ['#8a5638', '#845033', '#7b492e', '#6f4029', '#5e3522', '#554b41'],
-  m: ['#a06a48', '#996342', '#8f5b3c', '#835136', '#70452d', '#655a50'],
-  h: ['#b98460', '#b17b58', '#a67150', '#986545', '#82563b', '#796d62'],
-  u: ['#6a4a33', '#65452f', '#5e3f2b', '#553826', '#482e1f', '#474038'],
-}
+export class FaceSheet {
+  image: HTMLImageElement | null = null
+  private readonly listeners: (() => void)[] = []
 
-export interface FacePixel {
-  x: number
-  y: number
-  colour: string
-}
-
-const BLOOD = '#a81e12'
-const BLOOD_DARK = '#6d1108'
-
-/**
- * Pixels for one damage bucket, 0 (unhurt) through 5 (dead).
- *
- * Returned as data rather than drawn, so the portrait can be asserted in a
- * test -- bounds, no holes, tonal range, each bucket distinguishable, eyes
- * closing on death -- with no canvas involved.
- */
-export function facePixels(bucket: number): FacePixel[] {
-  const clamped = Math.max(0, Math.min(5, Math.floor(bucket)))
-  const dead = clamped >= 5
-  const pixels: FacePixel[] = []
-
-  for (let y = 0; y < FACE_HEIGHT; y++) {
-    const row = BASE[y]
-    for (let x = 0; x < FACE_WIDTH; x++) {
-      const ch = row[x]
-      if (ch === ' ') continue
-
-      // Behind the lenses the eyes go dark when dead. Removing them would
-      // leave holes in the head, which is a worse expression entirely.
-      if (dead && (ch === 'W' || ch === 'p')) {
-        pixels.push({ x, y, colour: PALETTE.B })
-        continue
-      }
-
-      const ramp = RAMPS[ch]
-      pixels.push({ x, y, colour: ramp ? ramp[clamped] : PALETTE[ch] })
+  constructor(src = '/faces.png') {
+    const img = new Image()
+    img.onload = () => {
+      this.image = img
+      for (const fn of this.listeners) fn()
     }
-  }
-
-  // Blood runs from the hairline down the face, further with each bucket.
-  if (clamped >= 2) {
-    for (let i = 0; i < 4 + clamped * 2; i++) {
-      pixels.push({ x: 8, y: 7 + i, colour: i > 4 ? BLOOD_DARK : BLOOD })
+    // A portrait that fails to load must not take the HUD with it.
+    img.onerror = () => {
+      this.image = null
     }
-    pixels.push({ x: 9, y: 7, colour: BLOOD })
-  }
-  if (clamped >= 3) {
-    for (let i = 0; i < clamped * 2; i++) {
-      pixels.push({ x: 21, y: 8 + i, colour: i > 3 ? BLOOD_DARK : BLOOD })
-    }
-    pixels.push({ x: 20, y: 8, colour: BLOOD })
-  }
-  if (clamped >= 4) {
-    for (let i = 0; i < 6; i++) pixels.push({ x: 12 + i, y: 25, colour: BLOOD_DARK })
-    for (let i = 0; i < 4; i++) pixels.push({ x: 13 + i, y: 26, colour: BLOOD })
+    img.src = src
   }
 
-  return pixels
-}
-
-/** Draw the portrait with its top-left at (x, y), each pixel `scale` square. */
-export function drawFace(
-  ctx: CanvasRenderingContext2D,
-  bucket: number,
-  x: number,
-  y: number,
-  scale = 1,
-): void {
-  for (const pixel of facePixels(bucket)) {
-    ctx.fillStyle = pixel.colour
-    ctx.fillRect(x + pixel.x * scale, y + pixel.y * scale, scale, scale)
+  onReady(fn: () => void): void {
+    if (this.image) fn()
+    else this.listeners.push(fn)
   }
 }

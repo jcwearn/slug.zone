@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { Hud } from './hud.ts'
 import type { PlayerHealth } from '../player/health.ts'
 import type { Arsenal } from '../weapons/arsenal.ts'
+import type { Expression } from './face.ts'
 
 /**
  * The screen-space layer: the status bar and the damage flash.
@@ -37,8 +38,13 @@ export class ScreenLayer {
     this.scene.add(this.flash)
   }
 
-  update(health: PlayerHealth, arsenal: Arsenal, keys: Set<string>): void {
-    this.hud.update(health, arsenal, keys)
+  update(
+    health: PlayerHealth,
+    arsenal: Arsenal,
+    keys: Set<string>,
+    expression: Expression = 'neutral',
+  ): void {
+    this.hud.update(health, arsenal, keys, expression)
     // Capped well below 1: the flash should read as being hit, not as a
     // screen transition.
     this.flashMaterial.opacity = Math.min(0.55, health.painFlash * 0.55)
