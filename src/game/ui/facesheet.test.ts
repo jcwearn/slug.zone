@@ -123,24 +123,54 @@ describe('public/faces.png', () => {
   })
 
   it('has no holes punched through the faces', () => {
-    // An earlier extraction cleared every near-white pixel to transparent to
-    // catch gutter fragments, and took the glasses' lens highlights and the
-    // brightest skin with it -- the portraits came out full of gaps. Every
-    // frame that should hold a face must be solid.
+    // An earlier extraction cleared every near-white pixel to transparent, to
+    // catch gutter fragments the flood fill could not reach, and took the
+    // glasses' lens highlights and the brightest skin with it -- the portraits
+    // came out full of gaps.
+    //
+    // Transparent pixels are legitimate now: the page behind each head is
+    // masked out so the bar shows through. So this checks the INTERIOR, where
+    // only face can be, rather than forbidding transparency outright.
     const img = decode()
-    if (img.bpp !== 4) return
+    expect(img.bpp).toBe(4)
+
+    const insetX = Math.round(FRAME_WIDTH * 0.28)
+    const insetY = Math.round(FRAME_HEIGHT * 0.28)
+    const offenders: string[] = []
 
     for (let r = 0; r < 6; r++) {
       for (let c = 0; c < 6; c++) {
         if (!(r < 5 || c < 3)) continue
-        let clear = 0
-        for (let dy = 0; dy < FRAME_HEIGHT; dy++) {
-          for (let dx = 0; dx < FRAME_WIDTH; dx++) {
+        for (let dy = insetY; dy < FRAME_HEIGHT - insetY; dy++) {
+          for (let dx = insetX; dx < FRAME_WIDTH - insetX; dx++) {
             const i = (r * FRAME_HEIGHT + dy) * img.stride + (c * FRAME_WIDTH + dx) * 4
-            if (img.data[i + 3] < 255) clear++
+            if (img.data[i + 3] < 255) offenders.push(`r${r}c${c} at ${dx},${dy}`)
           }
         }
-        expect(clear, `frame r${r}c${c} has transparent pixels`).toBe(0)
+      }
+    }
+    expect(offenders.slice(0, 8), 'holes in the middle of a face').toEqual([])
+  })
+
+  it('actually removed the page behind the heads', () => {
+    // The counterpart to the hole check: if the mask silently stopped working,
+    // every frame would be opaque and the portraits would sit on white cards
+    // again. Each frame must have cleared a meaningful share of its corners.
+    const img = decode()
+    for (let r = 0; r < 6; r++) {
+      for (let c = 0; c < 6; c++) {
+        if (!(r < 5 || c < 3)) continue
+        let clear = 0
+        for (const [dx, dy] of [
+          [1, 1],
+          [FRAME_WIDTH - 2, 1],
+          [1, FRAME_HEIGHT - 2],
+          [FRAME_WIDTH - 2, FRAME_HEIGHT - 2],
+        ]) {
+          const i = (r * FRAME_HEIGHT + dy) * img.stride + (c * FRAME_WIDTH + dx) * 4
+          if (img.data[i + 3] === 0) clear++
+        }
+        expect(clear, `frame r${r}c${c} corners still opaque`).toBeGreaterThanOrEqual(2)
       }
     }
   })
