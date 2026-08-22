@@ -22,13 +22,15 @@ function palette(def: EnemyDef) {
     entry = {
       geo: [
         new THREE.SphereGeometry(0.5, 7, 5),
-        new THREE.SphereGeometry(0.16, 5, 4),
-        new THREE.CylinderGeometry(0.045, 0.055, 0.45, 5),
+        new THREE.SphereGeometry(0.062, 5, 4),
+        new THREE.SphereGeometry(0.026, 4, 3),
+        new THREE.CylinderGeometry(0.038, 0.048, 0.42, 5),
       ],
       mats: [
         new THREE.MeshLambertMaterial({ color: def.color, flatShading: true }),
         new THREE.MeshLambertMaterial({ color: def.darkColor, flatShading: true }),
         new THREE.MeshLambertMaterial({ color: PALE, flatShading: true }),
+        new THREE.MeshLambertMaterial({ color: 0xf4f0dc, flatShading: true }),
         new THREE.MeshBasicMaterial({ color: 0x120c08 }),
       ],
     }
@@ -45,8 +47,8 @@ export interface EnemyView {
 
 export function buildEnemyView(def: EnemyDef): EnemyView {
   const { geo, mats } = palette(def)
-  const [blobGeo, eyeGeo, stalkGeo] = geo
-  const [skin, dark, pale, black] = mats
+  const [blobGeo, eyeGeo, pupilGeo, stalkGeo] = geo
+  const [skin, dark, pale, sclera, pupil] = mats
 
   const group = new THREE.Group()
   const body = new THREE.Group()
@@ -72,13 +74,23 @@ export function buildEnemyView(def: EnemyDef): EnemyView {
   // Eyestalks. Facing is -z, matching the player's forward convention.
   for (const side of [-1, 1]) {
     const stalk = new THREE.Mesh(stalkGeo, pale)
-    stalk.position.set(side * 0.16, 0.72, -0.66)
+    stalk.position.set(side * 0.14, 0.7, -0.65)
     stalk.rotation.z = side * 0.22
     body.add(stalk)
 
-    const eye = new THREE.Mesh(eyeGeo, black)
-    eye.position.set(side * 0.2, 0.95, -0.68)
+    // Eyeball plus a smaller pupil in front of it.
+    //
+    // The eyeball was radius 0.16 against a head of radius 0.25 -- 64% of the
+    // head -- and solid black, so it read as two balloons rather than eyes.
+    // A pale sclera with a small dark pupil gives it something to look WITH,
+    // and the pupil sits slightly forward so the gaze direction is legible.
+    const eye = new THREE.Mesh(eyeGeo, sclera)
+    eye.position.set(side * 0.155, 0.9, -0.66)
     body.add(eye)
+
+    const iris = new THREE.Mesh(pupilGeo, pupil)
+    iris.position.set(side * 0.16, 0.9, -0.706)
+    body.add(iris)
   }
 
   const foot = new THREE.Mesh(blobGeo, dark)

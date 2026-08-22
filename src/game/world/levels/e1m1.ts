@@ -43,16 +43,26 @@ const level: LevelSource = {
     '####################',
   ],
   entities: [
-    { type: 'player', x: 1.5, z: 1.5, angle: 0 },
+    // angle -PI/2 faces +x. Facing is (-sin(yaw), -cos(yaw)), so the default
+    // angle 0 faces -z -- which from this corner is the north wall, one cell
+    // away. The player was spawning nose-first into brickwork.
+    { type: 'player', x: 1.5, z: 1.5, angle: -Math.PI / 2 },
 
-    // Clustered near the start on purpose, for now. Spread across the map they
-    // were a scavenger hunt rather than a fight, and there is no HUD, automap
-    // or kill counter yet to tell you how many are left or where. They get
-    // distributed properly once G5 lands the HUD.
+    // Clustered at the spawn on purpose while there is no HUD, automap or kill
+    // counter to find them with.
+    //
+    // Only two sightlines exist from this corner: east along row 1, and south
+    // down column 1. Everything else is around a bend, which is how the last
+    // arrangement ended up with two of four enemies invisible despite sitting
+    // on open, reachable ground. visibility.test.ts now holds that line.
+    //
+    // Three Grubs east so the swarm reads as a swarm, and the Spitter south so
+    // there is a second direction to worry about -- at four cells it is inside
+    // its 7.5 range and will open fire while the Grubs close.
     { type: 'grub', x: 4.5, z: 1.5 },
     { type: 'grub', x: 6.5, z: 1.5 },
-    { type: 'grub', x: 3.5, z: 5.5 },
-    { type: 'spitter', x: 7.5, z: 3.5 },
+    { type: 'grub', x: 8.5, z: 1.5 },
+    { type: 'spitter', x: 1.5, z: 5.5 },
     { type: 'pickup', item: 'grinder', x: 5.5, z: 11.5 },
     { type: 'pickup', item: 'health', x: 14.5, z: 4.5 },
     { type: 'pickup', item: 'redkey', x: 3.5, z: 13.5 },
