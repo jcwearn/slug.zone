@@ -4,13 +4,14 @@ import { parseLevel } from '../world/level.ts'
 import { worldSpace } from '../world/space.ts'
 import {
   armourScale,
+  burstChain,
   burstDamage,
   enemyCylinder,
   spawnEnemy,
   targetable,
   updateEnemy,
 } from './enemy.ts'
-import { damage, isAlive } from './fsm.ts'
+import { createMind, damage, isAlive } from './fsm.ts'
 import { ENEMIES } from './definitions.ts'
 import { nearestHit, verticalAutoAim } from './hitscan.ts'
 import { createArsenal, damageAtRange, definition, fire, tickArsenal } from '../weapons/arsenal.ts'
@@ -93,9 +94,68 @@ describe('shooting an enemy', () => {
 
     expect(isAlive(grub.mind)).toBe(false)
     expect(hits).toBeGreaterThan(0)
-    // 15 hp against 12 damage falling off with range: two or three shots.
+    // 28 hp against 12 damage falling off with range: three shots or so.
     expect(shots).toBeGreaterThanOrEqual(2)
     expect(shots).toBeLessThanOrEqual(6)
+  })
+
+  it('lands a shotgun volley as one hit, hard enough to gib', () => {
+    // Pellets used to be applied one at a time, which made `gibThreshold`
+    // unreachable: the biggest single instance in the game was a 12-point Salt
+    // Shaker shot against a lowest threshold of 38, so `mind.gibbed` could
+    // never be true and `playGib` was dead code. `resolveVolley` in main.ts
+    // sums a volley per creature before applying it, which is what this
+    // mirrors.
+    //
+    // Two cells, not point blank: a Grub tops out at 1.4 world units against
+    // an eye at 2.2, and at arm's length the angle down to it falls outside
+    // the 0.25 rad autoaim cone, so every pellet sails over its head. Which is
+    // its own small lesson about where the shotgun actually works.
+    const rng = mulberry32(9)
+    const [px, pz] = [5.5, 9.5]
+    const grub = spawnEnemy('grub', 7.5, 9.5)
+    const yaw = facing(px, pz, grub.x, grub.z)
+
+    const arsenal = createArsenal()
+    arsenal.owned.add('grinder')
+    arsenal.ammo.coarse = 10
+    arsenal.current = 'grinder'
+
+    const result = fire(arsenal, rng)
+    expect(result.fired).toBe(true)
+    expect(result.def!.id).toBe('grinder')
+
+    let total = 0
+    for (const offset of result.angles!) {
+      const raw = aimDirection(yaw + offset, 0)
+      const targets = targetable([grub]).map((e) => ({
+        target: e,
+        cylinder: enemyCylinder(e, s, level.wallHeight),
+      }))
+      const dir = verticalAutoAim(
+        px * s,
+        eyeY,
+        pz * s,
+        raw.x,
+        raw.y,
+        raw.z,
+        targets,
+        18 * s,
+        AUTOAIM_CONE,
+      )
+      const hit = nearestHit(px * s, eyeY, pz * s, dir.x, dir.y, dir.z, targets, 18 * s)
+      if (hit) total += damageAtRange(result.def!, hit.distance / s)
+    }
+
+    expect(total).toBeGreaterThanOrEqual(ENEMIES.grub.gibThreshold)
+    damage(grub.mind, grub.def, total, rng)
+    expect(grub.mind.gibbed).toBe(true)
+
+    // The other half: the same volley must NOT gib the heavy, or the threshold
+    // is decoration and every death in the game is a gib.
+    const heavy = createMind(ENEMIES.brute)
+    damage(heavy, ENEMIES.brute, total, rng)
+    expect(heavy.gibbed).toBe(false)
   })
 
   it('cannot shoot an enemy through a wall', () => {
@@ -236,6 +296,209 @@ describe('death burst', () => {
     // Diagonal distance, so a burst cannot be a square dressed up as a circle.
     const diagonal = burstDamage(freshlyDead(), 5 + 1.8, 5 + 1.8)
     expect(diagonal, 'a corner 2.55 away is outside a 2.5 radius').toBe(0)
+  })
+})
+
+describe('a lunge', () => {
+  const brute = ENEMIES.brute
+
+  /**
+   * An open 9x9 room, because E1M1 has nowhere wide enough. Sidestepping a
+   * 1.6-cell reach needs about two cells of lateral travel -- which is what a
+   * sprinting player has during a 0.55s wind-up -- and the widest space on the
+   * shipped level is three cells across. Testing the dodge in a corridor would
+   * have proved only that corridors are narrow.
+   */
+  const arena = parseLevel({
+    ...e1m1,
+    grid: [
+      '###########',
+      '#.........#',
+      '#.........#',
+      '#.........#',
+      '#.........#',
+      '#.........#',
+      '#.........#',
+      '#.........#',
+      '#.........#',
+      '#.........#',
+      '###########',
+    ],
+    entities: [{ type: 'player', x: 5.5, z: 5.5 }],
+  })
+
+  const ROOM_X = 5.5
+  /** What a sprinting player covers sideways during the Brute's wind-up. */
+  const SPRINT_SIDESTEP = 2.6 * 1.75 * brute.attackWindup
+
+  /**
+   * Put a Brute in the room facing a player two cells away, walk it in until
+   * it commits to a wind-up, then run the wind-up out with the player wherever
+   * `moveTo` puts them.
+   */
+  const lunge = (moveTo: { x: number; z: number }) => {
+    const enemy = spawnEnemy('brute', ROOM_X, 1.5)
+    let px = ROOM_X
+    let pz = 4.5
+    enemy.facing = facing(enemy.x, enemy.z, px, pz)
+
+    // Close until it starts winding up.
+    for (let i = 0; i < 600 && enemy.mind.state !== 'attack'; i++) {
+      updateEnemy(enemy, arena, px, pz, STEP, 0)
+    }
+    expect(enemy.mind.state).toBe('attack')
+
+    const startX = enemy.x
+    const startZ = enemy.z
+    px = moveTo.x
+    pz = moveTo.z
+
+    let struck = false
+    for (let i = 0; i < 600 && enemy.mind.state === 'attack'; i++) {
+      updateEnemy(enemy, arena, px, pz, STEP, 0)
+      if (enemy.mind.didStrike) struck = true
+    }
+    return { enemy, struck, startX, startZ }
+  }
+
+  it('travels the line it committed to rather than following the player', () => {
+    // A lunge that recomputed the heading every tick would home, and a homing
+    // lunge cannot be sidestepped -- it just turns with you. The direction is
+    // latched when the wind-up begins, so the creature commits to the line the
+    // player was standing on.
+    const straight = lunge({ x: ROOM_X, z: 4.5 })
+    const sidestep = lunge({ x: ROOM_X - SPRINT_SIDESTEP, z: 4.5 })
+
+    expect(straight.enemy.x).toBeCloseTo(ROOM_X, 1)
+    expect(sidestep.enemy.x, 'the lunge curved toward the player -- it is homing').toBeCloseTo(
+      ROOM_X,
+      1,
+    )
+    // Both went forwards; it is only the heading that is fixed.
+    expect(sidestep.enemy.z).toBeGreaterThan(sidestep.startZ)
+  })
+
+  it('misses a player who steps aside, and lands on one who does not', () => {
+    // Two-sided on purpose. "Sidestepping dodges it" is satisfied by a lunge
+    // that never connects with anything, and "standing still gets you hit" is
+    // satisfied by one that always connects.
+    expect(lunge({ x: ROOM_X, z: 4.5 }).struck, 'standing still should be punished').toBe(true)
+    expect(
+      lunge({ x: ROOM_X - SPRINT_SIDESTEP, z: 4.5 }).struck,
+      'stepping aside should work',
+    ).toBe(false)
+  })
+
+  it('does not out-run a player backing straight off at a sprint', () => {
+    // At `charge: 8.5` it covered 4.7 cells during the 0.55s wind-up while a
+    // sprinting player covered 2.5, so backing off was not a choice either --
+    // the lunge simply arrived. It should close on a retreating player without
+    // being able to ignore the retreat.
+    const RUN = 2.6 * 1.75
+    expect(brute.charge!).toBeGreaterThan(RUN * 0.8)
+    expect(brute.charge!, 'a lunge you cannot back away from is not a telegraph').toBeLessThan(
+      RUN * 1.4,
+    )
+  })
+
+  it('drops the latched line once the attack is over', () => {
+    // A stale heading would steer the NEXT lunge down the previous one.
+    const { enemy } = lunge({ x: ROOM_X, z: 4.5 })
+    expect(enemy.mind.state).not.toBe('attack')
+    expect(enemy.lungeX).toBeNull()
+    expect(enemy.lungeZ).toBeNull()
+  })
+})
+
+describe('a burst chaining', () => {
+  const never = () => 1
+
+  /**
+   * A Slimebloat at (x, z), on the tick it dies.
+   *
+   * Killed properly rather than by setting `justDied` by hand: the flag only
+   * ever occurs alongside `state: 'dying'`, and a fixture that can produce one
+   * without the other tests a situation the game cannot reach.
+   */
+  const detonating = (x: number, z: number) => {
+    const e = spawnEnemy('slimebloat', x, z)
+    damage(e.mind, e.def, 9999, never)
+    expect(e.mind.justDied).toBe(true)
+    return e
+  }
+
+  it('kills the neighbours a burst reaches', () => {
+    const source = detonating(5, 5)
+    const near = spawnEnemy('grub', 5.5, 5)
+    burstChain(source, [source, near], never)
+    expect(near.mind.hp).toBeLessThan(ENEMIES.grub.hp)
+  })
+
+  it('leaves anything outside the radius alone', () => {
+    // Two-sided: "it damages neighbours" is satisfied by a burst that damages
+    // the whole level.
+    const source = detonating(5, 5)
+    const far = spawnEnemy('grub', 5 + ENEMIES.slimebloat.deathBurst!.radius + 0.5, 5)
+    burstChain(source, [source, far], never)
+    expect(far.mind.hp).toBe(ENEMIES.grub.hp)
+  })
+
+  it('does not damage the creature that burst', () => {
+    // Pinned by `damage`'s own dead-check as much as by the `other === source`
+    // skip -- a dying creature refuses damage either way. Kept as a statement
+    // of the contract at the call boundary, not as a guard on the skip: it
+    // cannot fail if that skip is removed, and it is not evidence that it works.
+    const source = detonating(5, 5)
+    const before = source.mind.hp
+    burstChain(source, [source], never)
+    expect(source.mind.hp).toBe(before)
+  })
+
+  it('does nothing for a creature that carries no burst', () => {
+    const plain = spawnEnemy('grub', 5, 5)
+    plain.mind.justDied = true
+    const near = spawnEnemy('grub', 5.3, 5)
+    burstChain(plain, [plain, near], never)
+    expect(near.mind.hp).toBe(ENEMIES.grub.hp)
+  })
+
+  it('does nothing on any tick but the one it dies on', () => {
+    const source = detonating(5, 5)
+    source.mind.justDied = false
+    const near = spawnEnemy('grub', 5.3, 5)
+    burstChain(source, [source, near], never)
+    expect(near.mind.hp).toBe(ENEMIES.grub.hp)
+  })
+
+  it('does not re-kill a corpse', () => {
+    // Same caveat as above: `damage` refuses the dead, so the `isAlive` skip in
+    // `burstChain` is belt and braces and removing it does not fail this.
+    const source = detonating(5, 5)
+    const corpse = spawnEnemy('grub', 5.3, 5)
+    damage(corpse.mind, corpse.def, 9999, never)
+    const hp = corpse.mind.hp
+    burstChain(source, [source, corpse], never)
+    expect(corpse.mind.hp).toBe(hp)
+    expect(corpse.mind.state).toBe('dying')
+  })
+
+  it('propagates one link per call, so a chain settles instead of recursing', () => {
+    // A recursive chain would kill C on the same call that killed B. Doing it
+    // a link at a time keeps each death on its own tick, which is what gives
+    // every one of them its own sound and splash through the normal path.
+    const a = detonating(5, 5)
+    // Radius is 2.6: C is out of A's reach at 3.0 and inside B's at 2.0.
+    const b = spawnEnemy('slimebloat', 5 + 1.0, 5)
+    const c = spawnEnemy('slimebloat', 5 + 3.0, 5)
+    b.mind.hp = 1
+    c.mind.hp = 1
+
+    burstChain(a, [a, b, c], never)
+    expect(isAlive(b.mind), 'B is inside A').toBe(false)
+    expect(isAlive(c.mind), 'C is outside A and must wait for B').toBe(true)
+
+    burstChain(b, [a, b, c], never)
+    expect(isAlive(c.mind)).toBe(false)
   })
 })
 
