@@ -2,59 +2,152 @@
 
 ## Current Status: In Progress
 
-| Phase                         | Status          | Updated    | Notes                                                                                    |
-| ----------------------------- | --------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| 0+1. Scaffold + landing page  | Complete        | 2026-08-22 | Branch renamed to `main`; 2019 React/browserify tree deleted; landing page ships zero JS |
-| 2. Cloudflare infra           | Complete        | 2026-08-22 | `slug-zone` project + `deploy-slug.zone` token, applied via cloudflare-infra#43          |
-| 3. Deploy workflow            | Complete        | 2026-08-22 | Actions + wrangler; previews verified on push with no PR open                            |
-| 4. Interim live-site update   | **Not Started** | —          | `http://slug.zone/` still shows the 2019 "Coming Soon" page                              |
-| 5. Game shell                 | Complete        | 2026-08-22 | 320x200 render target, fixed-step loop, pointer lock                                     |
-| G1. World & movement          | Complete        | 2026-08-22 | Level format, collision, DDA raycast, E1M1                                               |
-| G2. Weapons                   | Complete        | 2026-08-22 | Salt Shaker + Grinder, tracers, procedural SFX                                           |
-| G3. Enemies wave 1            | Complete        | 2026-08-22 | Grub + Spitter, shared FSM, separation, googly eyes                                      |
-| G4. Enemies wave 2            | Complete        | 2026-08-22 | Slimebloat, Banana Brute, Shellback; standoff, charge, death burst, directional armour   |
-| G5. HUD, pickups, progression | Complete        | 2026-08-22 | Pickups, keycards, doors, secrets, exit, Doom tally, best time in localStorage           |
-| G6. Content (E1M2–E1M5)       | Not Started     | —          | —                                                                                        |
-| G7. Boss                      | Not Started     | —          | —                                                                                        |
-| G8. Music                     | Not Started     | —          | —                                                                                        |
-| G9. Mobile controls           | Not Started     | —          | —                                                                                        |
-| G10. Polish                   | Not Started     | —          | —                                                                                        |
-| Final. DNS cutover            | Not Started     | —          | Blocked on the friend who controls DNS                                                   |
+| Phase                         | Status      | Updated    | Notes                                                                                    |
+| ----------------------------- | ----------- | ---------- | ---------------------------------------------------------------------------------------- |
+| 0+1. Scaffold + landing page  | Complete    | 2026-08-22 | Branch renamed to `main`; 2019 React/browserify tree deleted; landing page ships zero JS |
+| 2. Cloudflare infra           | Complete    | 2026-08-22 | `slug-zone` project + `deploy-slug.zone` token, applied via cloudflare-infra#43          |
+| 3. Deploy workflow            | Complete    | 2026-08-22 | Actions + wrangler; previews verified on push with no PR open                            |
+| 4. Interim live-site update   | Complete    | 2026-08-22 | slugzone.github.io#9 merged; PLAY goes to Cloudflare, the 1.19 MB React bundle is gone   |
+| 5. Game shell                 | Complete    | 2026-08-22 | 320x200 render target, fixed-step loop, pointer lock                                     |
+| G1. World & movement          | Complete    | 2026-08-22 | Level format, collision, DDA raycast, E1M1                                               |
+| G2. Weapons                   | Complete    | 2026-08-22 | Salt Shaker + Grinder, tracers, procedural SFX                                           |
+| G3. Enemies wave 1            | Complete    | 2026-08-22 | Grub + Spitter, shared FSM, separation, googly eyes                                      |
+| G4. Enemies wave 2            | Complete    | 2026-08-22 | Slimebloat, Banana Brute, Shellback; standoff, charge, death burst, directional armour   |
+| G5. HUD, pickups, progression | Complete    | 2026-08-22 | Pickups, keycards, doors, secrets, exit, Doom tally, best time in localStorage           |
+| G6. Content (E1M2–E1M5)       | Not Started | —          | —                                                                                        |
+| G7. Boss                      | Not Started | —          | —                                                                                        |
+| G8. Music                     | Complete    | 2026-08-22 | Tone.js; composed 72-bar track, six sections; M mutes, `[` `]` set volume, persisted     |
+| G9. Mobile controls           | Not Started | —          | —                                                                                        |
+| G10. Polish                   | Not Started | —          | —                                                                                        |
+| Final. DNS cutover            | Not Started | —          | Blocked on the friend who controls DNS                                                   |
 
 ## Where things stand
 
-**Live and working:** `https://slug-zone.pages.dev` — landing page, and the game at
+**Everything through G8 is merged. No PRs are open.** 597 tests, 33 files.
+
+**Live:** `https://slug-zone.pages.dev` -- landing page, and the game at
 `/game/`. Deploys from this repo's Actions on push to any branch; `main` is
 production, every other branch gets `<branch>.slug-zone.pages.dev`.
 
-**`http://slug.zone/` is still the 2019 page.** It is served by GitHub Pages from
-`slugzone/slugzone.github.io`, a repo owned by a separate account we hold only
-write access on. Nothing in this repo affects it.
+**`http://slug.zone/` now points at it.** The 2019 React page is gone: the
+GitHub Pages repo serves a static landing page whose PLAY button goes to
+`https://slug-zone.pages.dev/game/`. 1,216,989 bytes to 34,509, of which 30,446
+is the slug picture. Still HTTP-only -- that domain has never had a certificate,
+which is what the DNS cutover fixes.
 
-**E1M1 is a level you can finish, with five kinds of slug in it.** Ten kinds of pickup, three keycards, the
-door and the vault, the secret, and an intermission tally against the 90-second
-par with a best time that survives a reload. All 168 walkable cells are
-reachable in play; before the doors opened, 44 of them were not.
+**E1M1 is a level you can finish**, with five kinds of slug in it: pickups,
+three keycards, doors, a secret, a signed exit you press E on, a Doom-style
+tally against par, a persisted best time, an automap that fills in as you
+explore, and a soundtrack.
 
-550 tests, 31 files. `npm run format:check && npm run lint && npm run typecheck &&
-npm test && npm run build` is what CI runs, in that order.
+`npm run format:check && npm run lint && npm run typecheck && npm test && npm run
+build` is what CI runs, in that order.
 
 ## Next up, in the order I would do it
 
-1. **G6 content.** E1M2–E1M5. The level tests are now strong enough to author
-   against: they hold that a level parses, is completable **with the keys it
-   actually gives you**, strands nothing, buries no entity, reaches every
-   secret, signs every exit, and authors no doorway two cells wide. The exit
-   currently loops back to E1M1, so the first thing G6 needs is a level
-   registry for it to advance through.
-2. **More enemies, if the levels want them.** G4 shipped five types rather than
-   seven on purpose. Decide against real level layouts whether the roster is
-   short, rather than filling a quota.
-3. **Phase 4 or the DNS cutover.** The interim landing page on the old GitHub
-   Pages site was deferred because pointing PLAY at a spinning cube would have
-   advertised something that did not exist. That is no longer true.
+1. **Diagnose the G4 enemies.** Jackson played them and said they have issues;
+   nobody worked out what, and it is merged. See the handoff notes below for
+   the suspects. This is the first thing to pick up.
+2. **Listen to the music.** It shipped without ever being heard by the person
+   who wrote it -- there was no audio out and no browser automation for the
+   whole session it was built in. The mix levels are guesses.
+3. **G6 content.** E1M2-E1M5. The level tests are strong enough to author
+   against: a level must parse, be completable **with the keys it actually
+   gives you**, strand nothing, bury no entity, reach every secret, sign every
+   exit, and author no doorway two cells wide. The first thing G6 needs is a
+   level registry -- the exit currently loops back to E1M1 because there is
+   nowhere else for it to go.
+4. **The DNS cutover.** Phase 4 is done, so this is now the only thing between
+   the game and a real address with HTTPS.
 
 ## Handoff notes
+
+### Known problems, in the order they will bite
+
+1. **The G4 enemies have issues and it is merged anyway.** Jackson played them
+   and said so; they were never diagnosed. The likely suspects, none confirmed,
+   all single numbers in `enemies/definitions.ts`:
+   - the Brute's `charge: 8.5` covers most of its own reach during a 0.55s
+     wind-up, so the lunge may be undodgeable rather than tight;
+   - the Slimebloat's `deathBurst` of 32 over 2.6 cells lands exactly where the
+     Grinder wants you to be, which was the intent but may simply be unfair;
+   - the Shellback's 12% armour multiplier may still read as a broken weapon
+     despite the ricochet cue, in which case the arc or the multiplier moves.
+2. **Nothing from G5 onward was played in a browser by the agent that wrote
+   it.** No browser automation was available and there is no audio out.
+   Everything was verified by tests, by reading, and by fetching modules off
+   the dev server to confirm they transform. That is not the same as knowing it
+   works, and two bugs got through that way: a stuck intermission overlay and a
+   click-to-play button that stopped working entirely.
+3. **`CNAME` on `slugzone/slugzone.github.io` holds two domains** --
+   `slug.zone` and `www.slug.zone`, on separate lines. GitHub Pages expects
+   one, and this is the likeliest reason certificate issuance for the apex was
+   never initiated. Deliberately not touched: changing it could take the
+   working HTTP site down, and that account's login is unrecoverable. It stops
+   mattering at the DNS cutover.
+
+### Do not stack PRs on this repo without checking the head afterwards
+
+G4 was built as three PRs, each based on the one below. GitHub marked the inner
+two MERGED when they merged into their _base branches_, which had not yet gone
+to main -- so the outer PR's head carried only the first commit, while 483 lines
+across 11 files sat on branches with no open PR pointing at them. They were one
+merge away from being silently lost. Fixed by fast-forwarding the outer branch
+onto the innermost one before merging. **If you stack again, diff the head
+against main before merging it.**
+
+### What was learned about testing this codebase
+
+Every module added this session was mutation-checked, and **roughly a quarter of
+the assertions were worthless on the first pass**. The failures had shapes worth
+recognising, because they will recur:
+
+- **Deriving the expectation from the constant under test.** A pickup-radius
+  test computed its boundary from `PLAYER_RADIUS + PICKUP_RADIUS`, so an
+  implementation that ignored the radius it was handed agreed with it at every
+  value. Fixed by sweeping several radii.
+- **Asserting on an infinite set.** A geometry test pinned wall faces to a
+  plane without pinning them to a cell, so any wall anywhere along `z=8`
+  satisfied it -- while the jamb beside the door had no face at all.
+- **Asserting one half of a two-sided property.** "The bass is mostly the root"
+  passed for a bass line of 128 identical notes. "It uses the seed" passed for
+  a generator whose every chosen note was the same pitch.
+- **Two code paths that both clamp.** A settings test read a clamped value back
+  through a loader that also clamps, so it proved nothing about the writer.
+  Fixed by asserting on the raw stored text.
+- **Testing across a repeat.** The chorus states the tune twice, so anything
+  asserted over the whole chorus was satisfied by the repetition rather than by
+  the melody.
+- **A mutation that breaks everything proves nothing.** Widening E1M1's exit to
+  test a marker rule shortened the grid row and failed all nine shipped-level
+  tests for the wrong reason. It read as a pass.
+- **A short-circuit upstream of the thing under test.** A standoff test gave
+  the enemy line of sight and a ready cooldown, so the attack branch answered
+  before the branch being tested could.
+
+The rule that catches all of these is already in CLAUDE.md: reintroduce the bug
+and watch the suite fail. It is worth doing on every assertion, not only the
+ones that look risky.
+
+### The music is composed, not generated
+
+The first version picked notes at random from a scale. It passed every test
+written for it -- in key, galloping, snare on two and four -- and sounded like
+nothing, because those are properties a good tune HAS rather than properties
+that make one. Measured: a 10.9s loop, bass 83% one note, one bar of literally
+nothing but the root.
+
+`audio/track.ts` is now hand-written and arranged into six sections over 72
+bars (102.9s), with no randomness and no seed. **To change how it sounds,
+change the motifs** -- `RIFF_VERSE`, `RIFF_CHORUS`, `HOOK` -- rather than
+looking for a generator to tune. `audio/music.ts` is the Tone.js side and is
+not tested, because it is a synth graph.
+
+Tone keeps its **own** AudioContext and starts through `Tone.start()`. An
+earlier version handed it the context `sfx.ts` had already made, via
+`Tone.setContext`; that is one line shorter and it broke click-to-play
+entirely, because it ran inside the engage handler and took pointer lock down
+with it when it threw.
 
 ### Things that will bite you
 

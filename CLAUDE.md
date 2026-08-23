@@ -116,6 +116,21 @@ Both workflows pin `jcwearn/workflows@c9e49bd`. **Do not "simplify" that to
 
 Cloudflare config lives in `jcwearn/cloudflare-infra`. Plan only, never apply.
 
+## Music
+
+`audio/track.ts` is a score written out by hand -- motifs, arranged by section.
+It replaced a generator that picked scale degrees at random and passed every
+test written for it while sounding like nothing, because "in key" and "has a
+backbeat" are properties a good tune HAS rather than properties that make one.
+To change how it sounds, change `RIFF_VERSE`, `RIFF_CHORUS` or `HOOK`. There is
+no seed and no randomness left.
+
+`audio/music.ts` is the Tone.js side and is not tested. Tone keeps its **own**
+AudioContext and starts through `Tone.start()` -- handing it the one `sfx.ts`
+made, via `setContext`, is a line shorter and broke click-to-play, because it
+runs inside the engage handler and took pointer lock down with it when it
+threw. Nothing in the audio path may throw into a caller.
+
 ## Testing
 
 Pure logic is tested; rendering is not. Collision, level parsing, the enemy state
