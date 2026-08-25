@@ -155,15 +155,17 @@ function isWalkableForReachability(
   x: number,
   z: number,
   keys: ReadonlySet<string>,
+  throughSecrets = false,
 ): boolean {
   const cell = cellAt(level, x, z)
   if (!cell) return false
   if (cell.floor ?? cell.exit) return true
+  if (cell.secretWall) return throughSecrets
   if (cell.door) return cell.door.key === null || keys.has(cell.door.key)
   return false
 }
 
-function flood(level: Level, keys: ReadonlySet<string>): Set<number> {
+function flood(level: Level, keys: ReadonlySet<string>, throughSecrets = false): Set<number> {
   const seen = new Set<number>()
   const start = Math.floor(level.playerStart.z) * level.width + Math.floor(level.playerStart.x)
   const queue = [start]
@@ -183,7 +185,7 @@ function flood(level: Level, keys: ReadonlySet<string>): Set<number> {
       const nz = z + dz
       const ni = nz * level.width + nx
       if (seen.has(ni)) continue
-      if (!isWalkableForReachability(level, nx, nz, keys)) continue
+      if (!isWalkableForReachability(level, nx, nz, keys, throughSecrets)) continue
       seen.add(ni)
       queue.push(ni)
     }
@@ -209,10 +211,26 @@ function flood(level: Level, keys: ReadonlySet<string>): Set<number> {
  * It terminates because `keys` only ever grows and there are three of them.
  */
 export function reachableFromStart(level: Level): Set<number> {
+  return fixedPoint(level, false)
+}
+
+/**
+ * The same fixed point, but treating secret panels as passable.
+ *
+ * Used only to tell "stranded by an authoring mistake" apart from "deliberately
+ * put behind a secret". `reachableFromStart` must stay secret-IMPASSABLE, or
+ * the check that a level is finishable starts assuming the player found every
+ * panel in it.
+ */
+export function reachableThroughSecrets(level: Level): Set<number> {
+  return fixedPoint(level, true)
+}
+
+function fixedPoint(level: Level, throughSecrets: boolean): Set<number> {
   const keys = new Set<string>()
 
   for (;;) {
-    const seen = flood(level, keys)
+    const seen = flood(level, keys, throughSecrets)
     let grew = false
 
     for (const entity of level.entities) {
@@ -266,9 +284,25 @@ export function unmarkableExits(level: Level): Cell[] {
     )
 }
 
-/** Cells the player can never get to. An empty result is the healthy case. */
+/**
+ * Cells the player can never get to, even having found every secret. An empty
+ * result is the healthy case.
+ *
+ * Measured through secrets on purpose, which is the difference between a room
+ * hidden behind a panel and a room sealed by a typo. Against
+ * `reachableFromStart` -- which cannot pass a panel -- every cell behind a
+ * secret reads as stranded, so a secret could only ever be a shortcut between
+ * two places already reachable, and never hide anything. That is not what a
+ * secret is for.
+ *
+ * The invariant this gives up is small: a room walled off by a `secretWall` is
+ * no longer reported, but authoring one is deliberate in a way a typo is not,
+ * and "%s reaches every secret" still holds that the panel itself can be found.
+ * What it must NOT give up is the completability check, which is why that runs
+ * on the strict flood.
+ */
 export function unreachableWalkableCells(level: Level): Cell[] {
-  const seen = reachableFromStart(level)
+  const seen = reachableThroughSecrets(level)
   return level.cells.filter(
     (c) => (c.floor ?? c.exit ?? c.door) && !seen.has(c.z * level.width + c.x),
   )

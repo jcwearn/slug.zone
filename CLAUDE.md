@@ -117,6 +117,38 @@ keys the player can actually collect; one pass assumes you hold every card, so a
 key sealed inside the vault it opens ships as an unfinishable level. Secrets are
 impassable to it on purpose -- a secret must never be load-bearing.
 
+**Levels are a registry, and the world is rebuilt per level.**
+`world/levels/index.ts` holds the episode in order and position in that array
+IS the progression. `world/scene.ts` owns everything whose lifetime is one
+level, and the `World` interface is the rebuild checklist -- a field added to it
+will not compile until `loadWorld` returns it. `Explored` and the automap are
+both SIZED from `level.width/height`, so both are rebuilt rather than reset;
+`resetDoors` is a reset and is actively wrong across levels, because it writes
+`open` at the old door coordinates into the new grid. Parse the next level
+BEFORE tearing the current one down, so a malformed one throws with something
+still standing.
+
+**Every level must be beatable from a Salt Shaker start.** Dying restarts the
+level you are on with a fresh arsenal (`restart()`), while finishing one carries
+health, armour, weapons and ammo forward and drops the keycards
+(`campaign.ts`). So a level that can only be finished with the Grinder you found
+on the previous one is unwinnable for anyone who died on it. No test can check
+this.
+
+**The automap overflows past 33 cells.** `minimapLayout`'s scale has a floor of
+2 pixels per cell and that floor beats the size cap, so a level wider or taller
+than 33 silently overhangs the 320x200 target. `level.test.ts` fails on it per
+level. The fix when one is needed is to allow a 1px scale for huge maps, not to
+drop the floor everywhere -- at one pixel a wall and the corridor beside it are
+the same line.
+
+**A secret may hide a room; it may never gate one.** `reachableFromStart` cannot
+pass a secret panel, which is what holds "a level is finishable without finding
+any". `reachableThroughSecrets` can, and is what `unreachableWalkableCells` and
+the entity-reach check measure against -- otherwise loot behind a panel reads as
+stranded and a secret can only ever be a shortcut. A keycard behind a secret is
+still caught, by the completability check rather than by either of those.
+
 **Level geometry is data.** Levels are ASCII grids with a legend in
 `world/levels/`. `level.test.ts` asserts every shipped level parses, has a
 reachable exit, strands no walkable cells, and embeds no entity in a wall. Those

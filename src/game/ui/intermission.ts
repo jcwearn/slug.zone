@@ -52,17 +52,24 @@ export class Intermission {
     this.mesh.visible = false
   }
 
-  show(levelName: string, tally: Tally): void {
+  /**
+   * `nextName` is the level the click will take you to, or null at the end of
+   * the episode. It joins the signature: without that, finishing two levels in
+   * a row with identical row values and the same best time would match the
+   * previous signature and leave the old caption on screen.
+   */
+  show(levelName: string, tally: Tally, nextName: string | null): void {
     this.mesh.visible = true
     const signature = [
       levelName,
       ...tally.rows.map((r) => Math.floor(r.value)),
       tally.done,
       tally.best,
+      nextName ?? '',
     ].join('|')
     if (signature === this.signature) return
     this.signature = signature
-    this.draw(levelName, tally)
+    this.draw(levelName, tally, nextName)
   }
 
   hide(): void {
@@ -72,7 +79,7 @@ export class Intermission {
     this.signature = ''
   }
 
-  private draw(levelName: string, tally: Tally): void {
+  private draw(levelName: string, tally: Tally, nextName: string | null): void {
     const ctx = this.ctx
     ctx.clearRect(0, 0, WIDTH, HEIGHT)
     ctx.fillStyle = 'rgba(4, 8, 3, 0.93)'
@@ -108,7 +115,14 @@ export class Intermission {
         drawText(ctx, tally.best, valueRight - measureText(tally.best, 1), 170, colour, 1)
       }
 
-      centred('CLICK TO PLAY AGAIN', 186, LIME, 1)
+      if (nextName) {
+        // Doom's two-line form. The level name is drawn dim so the instruction
+        // stays the brightest thing on the screen -- it is what the click does.
+        centred(`ENTERING ${nextName.toUpperCase()}`, 178, DIM, 1)
+        centred('CLICK TO CONTINUE', 190, LIME, 1)
+      } else {
+        centred('CLICK TO PLAY AGAIN', 186, LIME, 1)
+      }
     }
 
     this.texture.needsUpdate = true

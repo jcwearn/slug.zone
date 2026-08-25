@@ -12,9 +12,9 @@
 | G1. World & movement          | Complete    | 2026-08-22 | Level format, collision, DDA raycast, E1M1                                               |
 | G2. Weapons                   | Complete    | 2026-08-22 | Salt Shaker + Grinder, tracers, procedural SFX                                           |
 | G3. Enemies wave 1            | Complete    | 2026-08-22 | Grub + Spitter, shared FSM, separation, googly eyes                                      |
-| G4. Enemies wave 2            | Complete    | 2026-08-22 | Slimebloat, Banana Brute, Shellback; standoff, charge, death burst, directional armour   |
+| G4. Enemies wave 2            | Complete    | 2026-08-24 | Diagnosed and fixed: the roster was stunlocked out of attacking. See #29                 |
 | G5. HUD, pickups, progression | Complete    | 2026-08-22 | Pickups, keycards, doors, secrets, exit, Doom tally, best time in localStorage           |
-| G6. Content (E1M2–E1M5)       | Not Started | —          | —                                                                                        |
+| G6. Content (E1M2–E1M5)       | In Progress | 2026-08-24 | Level registry, progression and E1M2 shipped; E1M3–E1M5 outstanding                      |
 | G7. Boss                      | Not Started | —          | —                                                                                        |
 | G8. Music                     | Complete    | 2026-08-22 | Tone.js; composed 72-bar track, six sections; M mutes, `[` `]` set volume, persisted     |
 | G9. Mobile controls           | Not Started | —          | —                                                                                        |
@@ -23,7 +23,35 @@
 
 ## Where things stand
 
-**Everything through G8 is merged. No PRs are open.** 597 tests, 33 files.
+**Everything through G8 is merged, plus the G4 combat fix (#29).** 680 tests, 37
+files.
+
+### The G4 diagnosis, which the last handoff got backwards
+
+The previous notes guessed the wave-2 enemies were too HARD and named three
+numbers as suspects. Jackson's actual report was the opposite -- "most of them
+you just shoot a few times and they go down" -- and all three guesses were
+wrong.
+
+`damage()` moved an enemy into `pain` from any live state including mid-attack,
+and `pain` overwrites `mind.timer`, which IS the wind-up clock. The cooldown
+kept running through the stagger, so the creature restarted a full wind-up on
+recovery and a weapon firing faster than the wind-up deleted attacks in a loop.
+Measured over 400 seeded lives: the Grub landed a hit in 0% of them, the Spitter
+0%, the Brute 48%. The Shellback felt like the only real fight because its
+armour meant shots barely registered, so it barely rolled pain -- the armour was
+accidentally the only anti-stunlock mechanism in the game.
+
+Not a health problem: tripling every health pool left the Grub silent in 91%.
+Fixed with `def.commitAt`, plus three other bugs found in the same read (a
+homing lunge that could not be sidestepped, an unreachable `gibThreshold` with
+`playGib` as dead code, and death bursts that never chained).
+
+**Jackson has played the fix and says combat is still too easy.** That is
+deliberately not being chased with another tuning pass -- the remaining headroom
+is encounter design, and the agreed plan is to address it as the levels get
+fleshed out. The Salt Shaker is still 48 dps with infinite ammo, near-zero
+spread and autoaim, which is the ceiling underneath any enemy tuning.
 
 **Live:** `https://slug-zone.pages.dev` -- landing page, and the game at
 `/game/`. Deploys from this repo's Actions on push to any branch; `main` is
@@ -45,20 +73,20 @@ build` is what CI runs, in that order.
 
 ## Next up, in the order I would do it
 
-1. **Diagnose the G4 enemies.** Jackson played them and said they have issues;
-   nobody worked out what, and it is merged. See the handoff notes below for
-   the suspects. This is the first thing to pick up.
-2. **Listen to the music.** It shipped without ever being heard by the person
-   who wrote it -- there was no audio out and no browser automation for the
-   whole session it was built in. The mix levels are guesses.
-3. **G6 content.** E1M2-E1M5. The level tests are strong enough to author
-   against: a level must parse, be completable **with the keys it actually
-   gives you**, strand nothing, bury no entity, reach every secret, sign every
-   exit, and author no doorway two cells wide. The first thing G6 needs is a
-   level registry -- the exit currently loops back to E1M1 because there is
-   nowhere else for it to go.
-4. **The DNS cutover.** Phase 4 is done, so this is now the only thing between
-   the game and a real address with HTTPS.
+1. **Play E1M2 and the transition.** Still nobody's hands on it. The registry
+   PR rewrote roughly ninety references in `main.ts` and that file has no unit
+   tests -- `world/scene.ts` and `campaign.ts` were extracted precisely so the
+   testable parts could leave it, but `advance()` itself is verified by reading.
+2. **Rework E1M1's encounters.** It is seven creatures on a 20x17 grid fought
+   almost entirely one at a time, which is why the roster's premise never comes
+   up. E1M2 was written to the opposite brief and is the reference.
+3. **E1M3-E1M5.** The registry makes this pure authoring, and `level.test.ts`
+   covers every new level automatically the moment it is added to `LEVELS`.
+4. **Listen to the music.** It shipped without ever being heard by the person
+   who wrote it. Still unheard: no audio out for an agent, so this needs
+   Jackson. The mix levels are guesses.
+5. **The DNS cutover.** Still the only thing between the game and a real address
+   with HTTPS, and still blocked on the friend who controls DNS.
 
 ## Handoff notes
 
