@@ -117,6 +117,25 @@ keys the player can actually collect; one pass assumes you hold every card, so a
 key sealed inside the vault it opens ships as an unfinishable level. Secrets are
 impassable to it on purpose -- a secret must never be load-bearing.
 
+**`justDied` must be read BEFORE the machine steps.** `damage` sets it and
+`step` clears it at the top of the next tick, and the player's shots land
+earlier in a tick than the creature update does -- so reading it after
+`updateEnemy` reads a flag that has just been wiped. It was on the wrong side
+from G3 to G6: every creature the player shot died completely unobserved, the
+kill counter never left zero, the intermission always read KILLS 0%, and no
+Slimebloat ever burst. `didStrike` is the opposite -- `step` SETS that one, so
+it has to be read on the far side. Nothing had been played since G5, which is
+why neither was noticed.
+
+**There is a bot.** `playthrough.test.ts` walks each shipped level from spawn to
+exit through the real collision, doors, keys and creatures, with no renderer. It
+answers questions a flood fill cannot: whether a body with a radius fits, whether
+a corridor is corked by something standing in it, whether a key can actually be
+reached and picked up. It found the bug above on its first run. It MIRRORS
+main.ts's tick order rather than calling it, so it cannot catch main.ts being
+reordered -- but writing the order out a second time is what made the first one
+look wrong.
+
 **A level must not fight its roster one at a time.** What makes the bestiary
 work is that no two creatures are answered by the same habit, and that only
 comes up when two of them ask at once. `level.test.ts` holds that at least two

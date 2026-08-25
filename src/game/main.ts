@@ -639,11 +639,18 @@ new Loop({
     }
 
     for (const entry of world.live) {
-      updateEnemy(entry.enemy, world.level, player.x, player.z, dt, PLAYER_RADIUS)
-      const nowIdle = entry.enemy.mind.state === 'idle'
-      if (entry.wasIdle && !nowIdle) playAlert(rng())
-      entry.wasIdle = nowIdle
-      // `justDied` is already a one-tick flag, so no edge tracking needed.
+      // Deaths are read BEFORE the machine steps, and that order is the whole
+      // of it. `justDied` is set by `damage`, and `step` clears it at the top
+      // of every tick -- while the player's shots land EARLIER in this same
+      // tick, up in the fire block. Reading it after `updateEnemy` therefore
+      // read a flag that had just been wiped, so every creature the player
+      // shot died completely unobserved: the kill counter never moved off
+      // zero, no Slimebloat ever burst, and nothing ever chained.
+      //
+      // A creature killed here by another's burst is picked up on this pass if
+      // it sits later in the list and on the next one if it sits earlier --
+      // either way before its own `step` runs, which is what makes this safe
+      // rather than merely lucky.
       if (entry.enemy.mind.justDied) {
         session.kills++
         // Whatever it was carrying goes off where it stood. Checked here
@@ -677,6 +684,13 @@ new Loop({
         }
       }
 
+      updateEnemy(entry.enemy, world.level, player.x, player.z, dt, PLAYER_RADIUS)
+      const nowIdle = entry.enemy.mind.state === 'idle'
+      if (entry.wasIdle && !nowIdle) playAlert(rng())
+      entry.wasIdle = nowIdle
+
+      // `didStrike`, by contrast, is SET by `step` rather than cleared by it,
+      // so it has to be read on the other side.
       // The strike lands at the end of the wind-up, and only if the player is
       // still in range -- the FSM already decided that.
       if (entry.enemy.mind.didStrike) {

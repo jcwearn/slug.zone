@@ -14,6 +14,20 @@
 export type Action =
   'forward' | 'back' | 'left' | 'right' | 'use' | 'fire' | 'run' | 'mute' | 'louder' | 'quieter'
 
+/**
+ * The part of `Input` the player controller actually reads.
+ *
+ * Named so the controller can be driven by something that is not a browser --
+ * `playthrough.test.ts` walks a bot through a whole level using the real
+ * movement and collision code, and it cannot construct an `Input` because that
+ * one wants a canvas and pointer lock. `Input` satisfies this structurally;
+ * nothing has to declare that it implements it.
+ */
+export interface PlayerInput {
+  isDown(action: Action): boolean
+  consumeLook(): { yaw: number; pitch: number }
+}
+
 const BINDINGS: Record<string, Action> = {
   KeyW: 'forward',
   ArrowUp: 'forward',
