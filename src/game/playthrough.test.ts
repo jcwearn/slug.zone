@@ -155,6 +155,10 @@ function play(source: (typeof LEVELS)[number]): Report {
   let leg = 0
   let t = 0
   let replan = 0
+  /** Recent positions, to notice being wedged against something. */
+  const recent: { x: number; z: number }[] = []
+  let circling: Action = 'left'
+  let circleFor = 0
 
   while (t < TIME_LIMIT && !health.dead) {
     // --- decide where to go ---
@@ -183,19 +187,8 @@ function play(source: (typeof LEVELS)[number]): Report {
     }
     replan--
 
-    // --- steer along the path ---
     held.delete('forward')
     held.delete('run')
-    if (leg < path.length) {
-      const target = path[leg]
-      const tx = (target % level.width) + 0.5
-      const tz = Math.floor(target / level.width) + 0.5
-      if (Math.hypot(tx - player.x, tz - player.z) < 0.35) leg++
-      else {
-        player.yaw = facing(player.x, player.z, tx, tz)
-        held.add('forward')
-      }
-    }
 
     // --- shoot whatever is in the way ---
     const alive = targetable(live)
@@ -206,6 +199,32 @@ function play(source: (typeof LEVELS)[number]): Report {
         (a, b) =>
           Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z),
       )[0]
+
+    // Wedged? The player is BLOCKED by creatures rather than pushing through
+    // them, so walking at one just stops. Standing there is how the bot lost a
+    // level to a single Shellback: it stood at arm's length plinking at an
+    // armoured front for nine seconds while everything else in the room ate
+    // it. Circling is the answer to both a cork and a shield, and it is the
+    // answer a player would reach for immediately -- a bot that cannot do it
+    // measures its own blind spot rather than the level.
+    recent.push({ x: player.x, z: player.z })
+    if (recent.length > 30) recent.shift()
+    const wedged =
+      recent.length === 30 && Math.hypot(player.x - recent[0].x, player.z - recent[0].z) < 0.15
+
+    held.delete('left')
+    held.delete('right')
+    if (wedged) {
+      if (circleFor <= 0) {
+        circling = circling === 'left' ? 'right' : 'left'
+        circleFor = 60
+      }
+      circleFor--
+      held.add(circling)
+      held.delete('forward')
+    } else {
+      circleFor = 0
+    }
 
     if (threat) {
       // Face it and fire. Perfect aim, which is why the damage this bot takes
@@ -259,6 +278,25 @@ function play(source: (typeof LEVELS)[number]): Report {
           else totals.set(hit.target, { damage: dealt, shield })
         }
         for (const [enemy, total] of totals) damageEnemy(enemy.mind, enemy.def, total.damage, rng)
+      }
+    }
+
+    // --- steer along the path ---
+    //
+    // AFTER the shot, deliberately. Movement is relative to yaw, so a bot that
+    // aimed and then walked would walk at whatever it was shooting -- closing
+    // to melee with Shellbacks and standing inside Slimebloats, which is how
+    // it lost this level three times over. Aiming is a thing you do for the
+    // instant of the shot; where you are going is a separate question, and a
+    // player answers both at once by snapping the mouse and letting go.
+    if (leg < path.length) {
+      const target = path[leg]
+      const tx = (target % level.width) + 0.5
+      const tz = Math.floor(target / level.width) + 0.5
+      if (Math.hypot(tx - player.x, tz - player.z) < 0.35) leg++
+      else {
+        player.yaw = facing(player.x, player.z, tx, tz)
+        if (!wedged) held.add('forward')
       }
     }
 
@@ -357,6 +395,10 @@ function play(source: (typeof LEVELS)[number]): Report {
 
 describe('a headless playthrough', () => {
   const played = LEVELS.map((source) => [source.id, play(source)] as const)
+
+  // Set PLAY_OUT to a path to dump what the bot did. This is the instrument a
+  // level gets tuned against -- E1M3 was moved three times on the strength of
+  // it -- and it is quiet unless asked, so it costs a normal run nothing.
   if (process.env.PLAY_OUT) {
     appendFileSync(
       process.env.PLAY_OUT,
@@ -398,5 +440,19 @@ describe('a headless playthrough', () => {
     // panics and never misses should still not walk it untouched -- if it can,
     // no human is going to find it dangerous either.
     expect(report.damageTaken, 'a bot crossed this level without being hit').toBeGreaterThan(0)
+  })
+
+  it('gets harder as the episode goes on', () => {
+    // The only difficulty measurement there is, and a weak one -- it is the
+    // cost to a bot rather than to a person. It is held anyway because the
+    // direction is not in question even if the numbers are: a level later in
+    // the episode that costs LESS than an earlier one is either mis-ordered or
+    // under-populated, and both are worth being told about.
+    //
+    // Compared against the first level rather than pairwise, so reordering two
+    // levels of similar weight does not fail it for no reason.
+    const first = played[0][1].damageTaken
+    const last = played[played.length - 1][1].damageTaken
+    expect(last, 'the episode does not escalate').toBeGreaterThan(first)
   })
 })
