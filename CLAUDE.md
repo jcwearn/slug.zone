@@ -127,6 +127,25 @@ Slimebloat ever burst. `didStrike` is the opposite -- `step` SETS that one, so
 it has to be read on the far side. Nothing had been played since G5, which is
 why neither was noticed.
 
+**The bot's damage figure is the cost of ITS route, not the difficulty of the
+level.** It sprints between fights and only shoots what gets in the way, so a
+level with a fast line through it scores low however much is in it -- E1M5 has
+the most creatures in the episode and the lowest cost of the last three. Use it
+to catch a level that costs nothing, and to compare a level against itself
+before and after a change. Do not use it to rank two levels.
+
+**Do not put an armoured or charging creature on a threshold.** A Shellback in a
+doorway is an armoured front with a wall on either side and no way round; a
+Brute inside one lands its lunge before you are through. Both were authored
+that way on E1M3 and E1M5, both passed every grid check, and both killed the
+bot. Where a creature is placed is not where it ends up, either -- they walk to
+the choke on their own.
+
+**Put a key at the end the OTHER door is at.** E1M5's nest has two gated ways
+in; with each card beside its own door the bot took the nearer one, skipped half
+the level and finished having taken less damage than either level before it.
+Crossed over, whichever half you walk first you walk the other one afterwards.
+
 **`provoked` never resets, so an undivided room is one encounter.** Once a
 creature has seen the player it keeps coming forever, with or without line of
 sight. A hall with eleven creatures in it is therefore not eleven fights, it is
