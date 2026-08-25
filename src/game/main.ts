@@ -5,19 +5,19 @@ import { Input } from './engine/input.ts'
 import { mulberry32 } from './engine/math.ts'
 import { PLAYER_RADIUS, raycast, type Disc } from './engine/collision.ts'
 import { parseLevel } from './world/level.ts'
-import { worldSpace } from './world/space.ts'
-import { buildLevelMeshes } from './world/geometry.ts'
+import { loadWorld, respawnEnemies, unloadWorld } from './world/scene.ts'
+import { LEVELS } from './world/levels/index.ts'
+import { carryInto, onward, type Onward } from './campaign.ts'
+import type { LevelSource } from './world/types.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
 import { createHealth, damagePlayer, tickHealth } from './player/health.ts'
 import { ScreenLayer, type Notice } from './ui/screen.ts'
 import type { Expression } from './ui/face.ts'
-import { collect, createPickups, pickupsTouching, resetPickups } from './pickups/pickups.ts'
-import { buildPickupView, posePickup } from './pickups/render.ts'
+import { collect, pickupsTouching, resetPickups } from './pickups/pickups.ts'
+import { posePickup } from './pickups/render.ts'
 import { LIME } from './data/palette.ts'
-import { buildDoors, resetDoors, tickDoors, tryOpen, useHint, useTarget } from './world/doors.ts'
-import { DoorViews } from './world/doorview.ts'
-import { ExitViews } from './world/exitview.ts'
-import { createExplored, resetExplored, revealFrom } from './world/explored.ts'
+import { resetDoors, tickDoors, tryOpen, useHint, useTarget } from './world/doors.ts'
+import { resetExplored, revealFrom } from './world/explored.ts'
 import { atExit, createSession, finishLevel, tickRun } from './session.ts'
 import { createTally, pressTally, snapTally, stepTally, type Tally } from './ui/tally.ts'
 import { browserStorage, loadRecords, recordTime, saveRecords } from './save/scores.ts'
@@ -29,12 +29,11 @@ import {
   burstDamage,
   enemyCylinder,
   separateEnemies,
-  spawnEnemy,
   targetable,
   updateEnemy,
   type Enemy,
 } from './enemies/enemy.ts'
-import { buildEnemyView, poseEnemy, type EnemyView } from './enemies/render.ts'
+import { poseEnemy } from './enemies/render.ts'
 import { damage as damageEnemy, isAlive } from './enemies/fsm.ts'
 import { nearestHit, verticalAutoAim } from './enemies/hitscan.ts'
 import { Globs } from './enemies/projectiles.ts'
@@ -74,7 +73,6 @@ import {
   unlockAudio,
 } from './audio/sfx.ts'
 import { musicVolume, setMusicVolume, startMusic, toggleMusic } from './audio/music.ts'
-import e1m1 from './world/levels/e1m1.ts'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#viewport')
 if (!canvas) throw new Error('#viewport canvas missing')
@@ -84,31 +82,16 @@ const LIME_TEXT = `#${LIME.toString(16).padStart(6, '0')}`
 /** A refusal reads in the same red the status bar warns in. */
 const LOCKED_TEXT = '#c8341a'
 
-const level = parseLevel(e1m1)
 const view = new RetroRenderer(canvas)
 const overlay = document.querySelector<HTMLElement>('#gate')
-const space = worldSpace(level)
-const s = level.cellSize
 const rng = mulberry32(0xc0ffee)
 
-view.scene.fog = new THREE.FogExp2(0x0a1405, level.fog)
+view.scene.fog = new THREE.FogExp2(0x0a1405, 0)
 view.scene.background = new THREE.Color(0x0a1405)
 view.scene.add(new THREE.AmbientLight(0xffffff, 0.75))
 
 const lantern = new THREE.PointLight(0xbfe08a, 60, 22, 1.6)
 view.scene.add(lantern)
-
-const meshes = buildLevelMeshes(level)
-view.scene.add(meshes.group)
-
-// The leaves are separate meshes because a face merged into the level's static
-// batches cannot move. geometry.ts emits the floor and ceiling they uncover.
-const doors = buildDoors(level)
-const doorViews = new DoorViews(doors, level)
-view.scene.add(doorViews.group)
-
-const exitViews = new ExitViews(level)
-view.scene.add(exitViews.group)
 
 const tracers = new Tracers()
 view.scene.add(tracers.mesh)
@@ -117,48 +100,33 @@ const globs = new Globs()
 const globRenderer = new GlobRenderer(globs.items.length)
 view.scene.add(globRenderer.mesh)
 
-const pickups = createPickups(level)
-const pickupViews = pickups.map((pickup) => {
-  const pickupView = buildPickupView(pickup.def)
-  view.scene.add(pickupView.group)
-  return pickupView
-})
+/**
+ * Everything belonging to the level currently being played.
+ *
+ * A `let`, and the one in the file: a level transition swaps this whole object
+ * rather than reassigning a dozen module-level bindings, so there is no way to
+ * rebuild thirteen of fourteen things and ship the fourteenth stale. See
+ * `world/scene.ts`.
+ */
+let world = loadWorld(parseLevel(LEVELS[0]), view.scene)
+applyLevelStyling()
 
-interface Live {
-  enemy: Enemy
-  view: EnemyView
-  /** Whether it had noticed the player last tick, for the alert sound. */
-  wasIdle: boolean
-  /** Where it started, so a restart can put it back. */
-  spawnX: number
-  spawnZ: number
+/**
+ * Fog is MUTATED rather than replaced, because changing the fog's identity or
+ * class is the sort of thing that provokes a material recompile -- at the worst
+ * possible moment, a click on the tally screen.
+ */
+function applyLevelStyling(): void {
+  ;(view.scene.fog as THREE.FogExp2).density = world.level.fog
 }
 
-const live: Live[] = []
-for (const entity of level.entities) {
-  if (entity.type === 'pickup') continue
-  const enemy = spawnEnemy(entity.type, entity.x, entity.z)
-  const enemyView = buildEnemyView(enemy.def)
-  view.scene.add(enemyView.group)
-  live.push({ enemy, view: enemyView, wasIdle: true, spawnX: entity.x, spawnZ: entity.z })
-}
-
-const player = createPlayer(level)
+const player = createPlayer(world.level)
 const health = createHealth()
 const arsenal = createArsenal()
-const screen = new ScreenLayer(level)
+const screen = new ScreenLayer(world.level)
 const keys = new Set<string>()
 
-const explored = createExplored(level)
-/**
- * How many cells the map holds, so the minimap knows when to repaint.
- *
- * Counted rather than recomputed from the fog every frame: `revealFrom` already
- * reports what it added, and summing that is free next to walking every cell.
- */
-let charted = 0
-
-const session = createSession(level, live.length, pickups.length)
+const session = createSession(world.level, world.live.length, world.pickups.length)
 const store = browserStorage()
 
 // Applied before anything can make a sound. `setMusicVolume` remembers the
@@ -166,6 +134,15 @@ const store = browserStorage()
 const settings = loadSettings(store)
 setMusicVolume(settings.musicVolume)
 let tally: Tally | null = null
+/**
+ * What the click on the finished tally will do.
+ *
+ * Decided once, in `completeLevel`, rather than recomputed in the render path
+ * -- after `advance()` the world has already moved on, so asking "what comes
+ * after the current level" on the way out would answer for the wrong one and
+ * the caption and the click could disagree.
+ */
+let after: Onward | null = null
 
 /**
  * Which portrait frame to show.
@@ -217,10 +194,10 @@ function say(text: string, colour: string): void {
  */
 function promptNow(): Notice {
   // Same order as the use key: exit first, doors after.
-  if (atExit(level, player.x, player.z)) {
+  if (atExit(world.level, player.x, player.z)) {
     return { text: 'PRESS E TO FINISH THE LEVEL', colour: LIME_TEXT }
   }
-  const hint = useHint(level, doors, player.x, player.z, player.yaw, keys)
+  const hint = useHint(world.level, world.doors, player.x, player.z, player.yaw, keys)
   if (hint.kind === 'open') return { text: 'PRESS E TO OPEN', colour: LIME_TEXT }
   if (hint.kind === 'locked') {
     return { text: `${hint.key.toUpperCase()} KEYCARD REQUIRED`, colour: LOCKED_TEXT }
@@ -234,51 +211,95 @@ const input = new Input(canvas, () => {
   // on it, and both hang off the same gesture because a browser will not give
   // you an AudioContext without one.
   unlockAudio()
-  startMusic(level.music)
+  startMusic(world.level.music)
 })
 
 const deathScreen = document.querySelector<HTMLElement>('#dead')
 
 /**
- * Put everything back for another go.
+ * The part of starting a level that is the same whether you just died on it or
+ * just walked into the one before.
+ *
+ * Factored out because "restart forgot to reset X" is the bug this whole area
+ * invites, and there are now two callers to forget in. It runs AFTER the world
+ * is in place, so the session counts the creatures and items of the level being
+ * started rather than the one being left -- get that backwards and the tally
+ * divides by the previous level's totals and reports 300% kills.
+ */
+function beginLevel(): void {
+  Object.assign(player, createPlayer(world.level))
+
+  globs.clear()
+  notice = { text: '', colour: '' }
+  noticeTimer = 0
+  snarlTimer = 0
+  itemClock = 0
+  previousYaw = player.yaw
+  lastPhase = arsenal.phase
+
+  Object.assign(session, createSession(world.level, world.live.length, world.pickups.length))
+  tally = null
+  after = null
+  screen.hideTally()
+  deathScreen?.classList.add('hidden')
+}
+
+/**
+ * Put everything back for another go on the level you are already on.
  *
  * A full reset rather than a page reload: reloading rebuilds the level meshes
  * and regenerates every texture, which is a visible pause for something that
- * should be instant.
+ * should be instant. The `World` is reused, which is why the resets below are
+ * resets rather than rebuilds.
  */
 function restart(): void {
-  const fresh = createPlayer(level)
-  Object.assign(player, fresh)
-
   Object.assign(health, createHealth())
   // Back to the Salt Shaker and nothing else. Keeping the Grinder across a
-  // death would make the first run the only one that has to find it.
+  // death would make the first run the only one that has to find it -- and it
+  // is what makes every level have to be beatable from a Salt Shaker start.
   Object.assign(arsenal, createArsenal())
+  keys.clear()
 
-  for (const entry of live) {
-    entry.enemy = spawnEnemy(entry.enemy.def.id, entry.spawnX, entry.spawnZ)
-    entry.wasIdle = true
-  }
-
-  resetPickups(pickups)
-  resetExplored(explored)
-  charted = 0
+  respawnEnemies(world)
+  resetPickups(world.pickups)
+  resetExplored(world.explored)
+  world.charted = 0
   screen.clearMinimap()
   // `cell.open` outlives a restart because the Level object is reused -- that
   // is the whole reason this is not a page reload. Without resetDoors the
   // second run starts with every door already standing open.
-  resetDoors(doors, level)
-  doorViews.sync(doors, level)
+  resetDoors(world.doors, world.level)
+  world.doorViews.sync(world.doors, world.level)
 
-  globs.clear()
-  keys.clear()
-  notice = { text: '', colour: '' }
-  noticeTimer = 0
+  beginLevel()
+}
 
-  Object.assign(session, createSession(level, live.length, pickups.length))
-  tally = null
-  screen.hideTally()
-  deathScreen?.classList.add('hidden')
+/**
+ * Move on to the next level.
+ *
+ * Parsed BEFORE anything is torn down, so a malformed level throws with the
+ * current one still standing and playable rather than leaving the loop running
+ * against an empty scene.
+ *
+ * Everything sized from the level is rebuilt rather than reset: `Explored` is
+ * allocated width*height and `Minimap` sizes its canvas the same way, so
+ * reusing either across differently shaped levels indexes with the wrong stride
+ * and draws a sheared map -- silently, because out-of-range cells are dropped
+ * rather than throwing.
+ */
+function advance(next: LevelSource): void {
+  const level = parseLevel(next)
+  unloadWorld(world, view.scene)
+  world = loadWorld(level, view.scene)
+  applyLevelStyling()
+
+  carryInto(health, arsenal, keys)
+  screen.setLevel(world.level)
+  // No-ops when two levels share a track, so the tune plays through the seam
+  // rather than restarting at the top of every map.
+  startMusic(world.level.music)
+
+  beginLevel()
 }
 
 /** The card a locked door wants, phrased for the message line. */
@@ -294,10 +315,13 @@ function lockedMessage(key: string): string {
  */
 function completeLevel(): void {
   finishLevel(session)
+  // The record is written here, before the world can move on, so it can only
+  // ever land under the id of the level that was actually played.
   const records = loadRecords(store)
-  const result = recordTime(records, level.id, session.elapsed)
+  const result = recordTime(records, world.level.id, session.elapsed)
   if (result.improved) saveRecords(store, records)
   tally = createTally(session, result.previous ?? result.best, result.improved)
+  after = onward(world.level.id)
   playExit()
 }
 
@@ -322,6 +346,10 @@ interface PelletHit {
 }
 
 function shootPellet(angleOffset: number): PelletHit | null {
+  // Destructured because a pellet cannot outlive the world it was fired in --
+  // nothing between here and the return can swap levels -- and because the
+  // scale factor appears a dozen times below.
+  const { level, space, s, live } = world
   const def = definition(arsenal)
   const raw = aimDirection(player.yaw + angleOffset, player.pitch)
 
@@ -494,21 +522,25 @@ new Loop({
         const press = pressTally(tally)
         if (press === 'snap') snapTally(tally)
         else if (press === 'restart') {
-          // Straight out. `restart()` nulls `tally`, and TypeScript does not
+          // Straight out. Both branches null `tally`, and TypeScript does not
           // un-narrow a module-level `let` across a call -- so everything
           // below here still believes it holds a tally and would hand null to
           // the intermission, which sets itself visible before it reads it.
-          restart()
+          //
+          // `after` was decided at the exit, not here, so the caption the
+          // player just read and the thing this does cannot disagree.
+          if (after?.kind === 'advance') advance(after.next)
+          else restart()
           return
         }
       }
 
-      screen.showTally(level.name, tally)
+      screen.showTally(world.level.name, tally, after?.kind === 'advance' ? after.next.name : null)
       screen.update(health, arsenal, keys, 'neutral', { text: '', colour: '' })
       // Doors keep moving so a leaf caught mid-rise is not frozen behind the
       // tally, and the enemies are deliberately left where they stood.
-      tickDoors(doors, level, dt)
-      doorViews.sync(doors, level)
+      tickDoors(world.doors, world.level, dt)
+      world.doorViews.sync(world.doors, world.level)
       return
     }
 
@@ -516,18 +548,18 @@ new Loop({
 
     const before = { x: player.x, z: player.z }
     // Live slugs only -- corpses are scenery you walk over.
-    const blockers: Disc[] = targetable(live.map((l) => l.enemy)).map((e) => ({
+    const blockers: Disc[] = targetable(world.live.map((l) => l.enemy)).map((e) => ({
       x: e.x,
       z: e.z,
       radius: e.def.radius,
     }))
-    updatePlayer(player, level, input, dt, blockers)
+    updatePlayer(player, world.level, input, dt, blockers)
     const moving = Math.hypot(player.x - before.x, player.z - before.z) > 1e-5
 
     // Collected where the player ACTUALLY ended up, after walls and slugs have
     // had their say -- testing the position they asked for would let you grab
     // an item through a door you were standing against.
-    for (const item of pickupsTouching(pickups, player.x, player.z, PLAYER_RADIUS)) {
+    for (const item of pickupsTouching(world.pickups, player.x, player.z, PLAYER_RADIUS)) {
       const result = collect(item.def, { health, arsenal, keys })
       if (!result.taken) continue
       item.taken = true
@@ -559,14 +591,14 @@ new Loop({
       // is checked with the same `atExit` the prompt uses, in the same order,
       // so the line under the crosshair cannot offer something use will not
       // do. Anywhere else, use belongs to the doors.
-      if (atExit(level, player.x, player.z)) {
+      if (atExit(world.level, player.x, player.z)) {
         completeLevel()
         return
       }
 
-      const target = useTarget(level, player.x, player.z, player.yaw)
+      const target = useTarget(world.level, player.x, player.z, player.yaw)
       const result = target
-        ? tryOpen(doors, target.x, target.z, keys)
+        ? tryOpen(world.doors, target.x, target.z, keys)
         : { outcome: 'none' as const }
 
       if (result.outcome === 'opened') {
@@ -584,7 +616,7 @@ new Loop({
       }
     }
 
-    tickDoors(doors, level, dt)
+    tickDoors(world.doors, world.level, dt)
 
     for (const slot of input.consumeSlots()) selectSlot(arsenal, slot)
     const wheel = input.consumeWheel()
@@ -606,8 +638,8 @@ new Loop({
       }
     }
 
-    for (const entry of live) {
-      updateEnemy(entry.enemy, level, player.x, player.z, dt, PLAYER_RADIUS)
+    for (const entry of world.live) {
+      updateEnemy(entry.enemy, world.level, player.x, player.z, dt, PLAYER_RADIUS)
       const nowIdle = entry.enemy.mind.state === 'idle'
       if (entry.wasIdle && !nowIdle) playAlert(rng())
       entry.wasIdle = nowIdle
@@ -629,14 +661,14 @@ new Loop({
         // side by side did not chain.
         burstChain(
           entry.enemy,
-          live.map((l) => l.enemy),
+          world.live.map((l) => l.enemy),
           rng,
         )
         if (entry.enemy.def.deathBurst) {
           tracers.emitImpact(
-            entry.enemy.x * s,
-            space.eyeY(entry.enemy.def.height * 0.5),
-            entry.enemy.z * s,
+            entry.enemy.x * world.s,
+            world.space.eyeY(entry.enemy.def.height * 0.5),
+            entry.enemy.z * world.s,
             0,
             0,
             rng,
@@ -655,10 +687,10 @@ new Loop({
           const glob = globs.spawn(
             entry.enemy.x,
             entry.enemy.z,
-            entry.enemy.def.height * level.wallHeight * 0.8,
+            entry.enemy.def.height * world.level.wallHeight * 0.8,
             player.x,
             player.z,
-            space.eyeY(EYE_HEIGHT) - 0.35,
+            world.space.eyeY(EYE_HEIGHT) - 0.35,
             ranged.speed,
             entry.enemy.def.damage,
           )
@@ -677,24 +709,24 @@ new Loop({
     // After everyone has moved, so the push resolves the positions they
     // actually ended up in rather than the ones they started from.
     separateEnemies(
-      live.map((l) => l.enemy),
-      level,
+      world.live.map((l) => l.enemy),
+      world.level,
     )
 
     for (const outcome of globs.step(
-      level,
+      world.level,
       dt,
       player.x,
       player.z,
       PLAYER_RADIUS,
-      level.wallHeight,
-      space.floorY,
+      world.level.wallHeight,
+      world.space.floorY,
       // A little above the eye, so a glob aimed at your face connects rather
       // than clipping past the top of the hitbox.
-      space.eyeY(EYE_HEIGHT + player.eyeOffset) + 0.25,
+      world.space.eyeY(EYE_HEIGHT + player.eyeOffset) + 0.25,
     )) {
-      const worldX = outcome.kind === 'none' ? 0 : outcome.x * s
-      const worldZ = outcome.kind === 'none' ? 0 : outcome.z * s
+      const worldX = outcome.kind === 'none' ? 0 : outcome.x * world.s
+      const worldZ = outcome.kind === 'none' ? 0 : outcome.z * world.s
       if (outcome.kind === 'hit') {
         const result = damagePlayer(health, outcome.damage)
         if (result.died) playDeath()
@@ -710,21 +742,22 @@ new Loop({
     if (lastPhase === 'lowering' && arsenal.phase === 'raising') playSwitch()
     lastPhase = arsenal.phase
 
-    for (const entry of live) poseEnemy(entry.view, entry.enemy, s, level.wallHeight, dt)
+    for (const entry of world.live)
+      poseEnemy(entry.view, entry.enemy, world.s, world.level.wallHeight, dt)
 
     // One clock for every item, so a room full of them pulses together rather
     // than each bobbing on its own phase.
     itemClock += dt
-    for (let i = 0; i < pickups.length; i++) {
-      posePickup(pickupViews[i], pickups[i], s, level.wallHeight, itemClock)
+    for (let i = 0; i < world.pickups.length; i++) {
+      posePickup(world.pickupViews[i], world.pickups[i], world.s, world.level.wallHeight, itemClock)
     }
-    doorViews.sync(doors, level)
-    exitViews.update(dt)
+    world.doorViews.sync(world.doors, world.level)
+    world.exitViews.update(dt)
 
     // After the doors, so a door opened this frame charts what it opened onto
     // rather than waiting for the player to take another step.
-    charted += revealFrom(level, explored, player.x, player.z)
-    screen.updateMinimap(level, explored, player.x, player.z, player.yaw, charted)
+    world.charted += revealFrom(world.level, world.explored, player.x, player.z)
+    screen.updateMinimap(world.level, world.explored, player.x, player.z, player.yaw, world.charted)
 
     tickHealth(health, dt)
     snarlTimer = Math.max(0, snarlTimer - dt)
@@ -734,12 +767,12 @@ new Loop({
     previousYaw = player.yaw
     viewmodel.update(arsenal, dt, player.bobPhase, moving)
     tracers.update(dt)
-    globRenderer.sync(globs, s)
+    globRenderer.sync(globs, world.s)
   },
 
   render() {
-    const eyeY = space.eyeY(EYE_HEIGHT + player.eyeOffset)
-    view.camera.position.set(player.x * s, eyeY, player.z * s)
+    const eyeY = world.space.eyeY(EYE_HEIGHT + player.eyeOffset)
+    view.camera.position.set(player.x * world.s, eyeY, player.z * world.s)
     view.camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ')
     lantern.position.copy(view.camera.position)
     view.render(viewmodel, screen)

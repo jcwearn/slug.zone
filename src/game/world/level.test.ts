@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   cellAt,
@@ -5,12 +6,14 @@ import {
   LevelParseError,
   parseLevel,
   reachableFromStart,
+  reachableThroughSecrets,
   unmarkableExits,
   unreachableWalkableCells,
 } from './level.ts'
 import type { LevelSource } from './types.ts'
 import { ITEMS } from '../pickups/definitions.ts'
-import e1m1 from './levels/e1m1.ts'
+import { MAX_SPAN, minimapLayout } from '../ui/minimap.ts'
+import { LEVELS } from './levels/index.ts'
 
 const base: LevelSource = {
   id: 'test',
@@ -223,6 +226,30 @@ describe('reachability', () => {
     expect(unreachableWalkableCells(level)).toEqual([])
   })
 
+  it('does not call a pocket behind a secret stranded', () => {
+    // A room hidden behind a panel is optional content, not an authoring
+    // mistake, and the two have to be told apart or a secret can never hide
+    // anything -- only ever be a shortcut between two places you could already
+    // get to.
+    const level = parseLevel(
+      withGrid(['#####', '#.S.#', '#####'], {
+        entities: [{ type: 'player', x: 1.5, z: 1.5 }],
+      }),
+    )
+    expect(unreachableWalkableCells(level)).toEqual([])
+  })
+
+  it('still calls a pocket behind a plain wall stranded', () => {
+    // The other half. Passing secrets must not turn the check off: a cell
+    // walled in with `#` is a typo and has to stay reported.
+    const level = parseLevel(
+      withGrid(['#####', '#.#.#', '#####'], {
+        entities: [{ type: 'player', x: 1.5, z: 1.5 }],
+      }),
+    )
+    expect(unreachableWalkableCells(level).map((c) => [c.x, c.z])).toEqual([[3, 1]])
+  })
+
   it('never lets a secret be the only way through', () => {
     // A level that can only be completed by finding a secret is a level most
     // players cannot complete at all.
@@ -269,7 +296,30 @@ describe('unmarkableExits', () => {
 describe('shipped levels', () => {
   // Every level file must parse. Cheap, and it catches typos in a hand-edited
   // ASCII grid the moment they are introduced rather than at play time.
-  const levels = [e1m1]
+  //
+  // Driven off the registry rather than a list kept here, so a level added to
+  // the episode inherits every property below without anyone remembering to
+  // come and add it. That is most of the reason the registry holds unparsed
+  // sources.
+  const levels = LEVELS
+
+  it('registers every level file, and names each file after its id', () => {
+    // Read off disk rather than imported, so a level file that exists and is
+    // not in the registry fails here instead of quietly not being in the game.
+    // The reverse -- registered but missing -- is a compile error already.
+    const dir = readdirSync(new URL('./levels/', import.meta.url))
+      .filter((name) => name.endsWith('.ts'))
+      .filter((name) => !name.endsWith('.test.ts') && name !== 'index.ts')
+      .map((name) => name.slice(0, -'.ts'.length))
+    expect(dir.sort()).toEqual(LEVELS.map((l) => l.id).sort())
+  })
+
+  it('gives every level a distinct id', () => {
+    // Best times are keyed by id and so is the progression, so a level file
+    // copied without changing its id silently shares a record with the one it
+    // was copied from AND makes `nextLevel` answer for the wrong map.
+    expect(new Set(LEVELS.map((l) => l.id)).size).toBe(LEVELS.length)
+  })
 
   it.each(levels.map((l) => [l.id, l] as const))('%s parses', (_id, src) => {
     expect(() => parseLevel(src)).not.toThrow()
@@ -373,12 +423,29 @@ describe('shipped levels', () => {
   })
 
   it.each(levels.map((l) => [l.id, l] as const))(
+    '%s draws an automap that fits on the screen',
+    (_id, src) => {
+      // The automap's scale has a floor of 2 pixels per cell, and that floor
+      // beats the size cap -- so a level past 33 cells in either direction
+      // silently overhangs its corner of a 320x200 screen. Caught here, on the
+      // level, because it is a level-size problem rather than a drawing one.
+      const { width, height } = minimapLayout(parseLevel(src))
+      expect(Math.max(width, height), 'automap overhangs the screen').toBeLessThanOrEqual(MAX_SPAN)
+    },
+  )
+
+  it.each(levels.map((l) => [l.id, l] as const))(
     '%s puts every entity within reach',
     (_id, src) => {
       // On open ground is not the same as reachable. An item walled into a
       // sealed pocket passes every other check here and is simply never found.
+      //
+      // Measured through secrets, because loot behind a panel is the point of
+      // a panel. A KEYCARD behind one is still caught, and by the check that
+      // matters: the strict flood cannot collect it, so the door it opens never
+      // opens and "%s is completable" fails.
       const level = parseLevel(src)
-      const seen = reachableFromStart(level)
+      const seen = reachableThroughSecrets(level)
       const marooned = level.entities
         .filter((e) => !seen.has(Math.floor(e.z) * level.width + Math.floor(e.x)))
         .map((e) => `${e.type}${e.item ? `:${e.item}` : ''}@${e.x},${e.z}`)

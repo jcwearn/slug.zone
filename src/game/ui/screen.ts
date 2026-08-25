@@ -104,12 +104,24 @@ export class ScreenLayer {
    * nulled it and then fell through to this method, which turned the overlay
    * back on before throwing on the null it had just been handed.
    */
-  showTally(levelName: string, tally: Tally | null): void {
+  showTally(levelName: string, tally: Tally | null, nextName: string | null): void {
     if (!tally) {
       this.intermission.hide()
       return
     }
-    this.intermission.show(levelName, tally)
+    this.intermission.show(levelName, tally, nextName)
+  }
+
+  /**
+   * Re-fit the automap for a new level.
+   *
+   * Only the minimap is level-shaped. The rest of the layer is not rebuilt on a
+   * transition on purpose: `ui/face.ts` loads the portrait sheet through a
+   * fresh `new Image()` per instance, so a rebuild would blank the HUD face
+   * until the decode landed.
+   */
+  setLevel(level: Level): void {
+    this.minimap.resize(level)
   }
 
   hideTally(): void {

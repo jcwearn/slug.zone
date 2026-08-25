@@ -17,7 +17,7 @@ import type { Level } from '../world/level.ts'
 const SCREEN_WIDTH = 320
 const SCREEN_HEIGHT = 200
 /** Largest the map may grow in either axis, in screen pixels. */
-const MAX_SPAN = 66
+export const MAX_SPAN = 66
 const MARGIN = 4
 /** Clear of the message line along the top. */
 const TOP = 15
@@ -29,24 +29,41 @@ const EXIT = '#54e508'
 const DOOR = '#a8783c'
 const PLAYER = '#e8e4d8'
 
+export interface MinimapLayout {
+  /** Whole screen pixels per grid cell. */
+  scale: number
+  /** Canvas size, in screen pixels. */
+  width: number
+  height: number
+}
+
+/**
+ * How big the map is for a level of this many cells.
+ *
+ * Pure, and exported, so `level.test.ts` can assert per level that the automap
+ * actually fits on a 320x200 screen. `scale` has a floor of 2 -- at one pixel
+ * a wall and the corridor beside it are the same line -- and that floor beats
+ * MAX_SPAN, so any level wider or taller than 33 cells produces a canvas that
+ * overhangs the screen. E1M1 is 20x17 and never came close, so nothing caught
+ * it; the first genuinely large level would have, silently and in the corner.
+ */
+export function minimapLayout(cells: { width: number; height: number }): MinimapLayout {
+  // Whole pixels per cell, or the grid shimmers as it scales.
+  const scale = Math.max(2, Math.min(5, Math.floor(MAX_SPAN / Math.max(cells.width, cells.height))))
+  return { scale, width: cells.width * scale, height: cells.height * scale }
+}
+
 export class Minimap {
   readonly mesh: THREE.Mesh
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private readonly texture: THREE.CanvasTexture
-  private readonly scale: number
+  private scale: number
   private signature = ''
 
   constructor(level: Level) {
-    // Whole pixels per cell, or the grid shimmers as it scales. Two is the
-    // floor: at one pixel a wall and the corridor beside it are the same line.
-    this.scale = Math.max(
-      2,
-      Math.min(5, Math.floor(MAX_SPAN / Math.max(level.width, level.height))),
-    )
-
-    const width = level.width * this.scale
-    const height = level.height * this.scale
+    const { scale, width, height } = minimapLayout(level)
+    this.scale = scale
 
     this.canvas = document.createElement('canvas')
     this.canvas.width = width
@@ -65,7 +82,37 @@ export class Minimap {
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false }),
     )
-    // Top right, in the ortho 0..1 screen space the layer uses.
+    this.place(width, height)
+  }
+
+  /**
+   * Re-fit for a different level.
+   *
+   * The canvas, the scale and the quad are all sized from the level, so a
+   * Minimap reused across levels of different dimensions fails silently rather
+   * than loudly: a bigger level draws off the edge of its own canvas and the
+   * far corner of the map is simply never charted, a smaller one leaves an
+   * oversized quad parked in the corner.
+   *
+   * Rebuilding the whole `ScreenLayer` per level would also work and is worse:
+   * `ui/face.ts` loads its portrait sheet through a fresh `new Image()` per
+   * instance, so the HUD face would blank on every level change until the
+   * decode landed.
+   */
+  resize(level: Level): void {
+    const { scale, width, height } = minimapLayout(level)
+    this.scale = scale
+    this.canvas.width = width
+    this.canvas.height = height
+    this.place(width, height)
+    // The signature encodes positions in map pixels, which have just changed
+    // meaning. Clearing it forces the first paint on the new level.
+    this.signature = ''
+    this.texture.needsUpdate = true
+  }
+
+  /** Top right, in the ortho 0..1 screen space the layer uses. */
+  private place(width: number, height: number): void {
     const w = width / SCREEN_WIDTH
     const h = height / SCREEN_HEIGHT
     this.mesh.scale.set(w, h, 1)
