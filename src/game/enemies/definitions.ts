@@ -55,6 +55,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     armour: null,
     standoff: 0,
     charge: null,
+    enrage: null,
     deathBurst: null,
     projectile: null,
   },
@@ -95,6 +96,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     // never takes it out of the range it wants to shoot from.
     standoff: 4.5,
     charge: null,
+    enrage: null,
     deathBurst: null,
     // Slow enough to see coming and step out of. A Spitter that cannot be
     // dodged is just a Grub that hits you from across the room.
@@ -134,6 +136,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     charge: null,
     // Hurts more than a Grub's bite and reaches further than melee, so
     // popping one in a doorway you are standing in is a real mistake.
+    enrage: null,
     deathBurst: { damage: 32, radius: 2.6 },
     projectile: null,
   },
@@ -179,6 +182,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     // lunge stopped homing: `enemy.ts` latches the direction when the wind-up
     // begins, so this travels the line you were standing on.
     charge: 4.5,
+    enrage: null,
     deathBurst: null,
     projectile: null,
   },
@@ -215,8 +219,81 @@ export const ENEMIES: Record<string, EnemyDef> = {
     armour: { arc: 1.5, multiplier: 0.12 },
     standoff: 0,
     charge: null,
+    enrage: null,
     deathBurst: null,
     projectile: null,
+  },
+  /**
+   * The Matriarch. The thing the rest of them came out of.
+   *
+   * Two creatures wearing one body. While the plating holds she will not let
+   * you close: she gives ground to keep you at glob range and the front of her
+   * is nine tenths proof, so the fight is a long one fought at distance with
+   * the Salt Shaker, from behind the pillars, working round to a flank.
+   *
+   * Under two fifths of her health the shell splits, and everything that made
+   * that fight work stops being true. She stops giving ground, stops throwing,
+   * stops flinching, and comes at you at nearly twice the speed with a lunge
+   * that hits harder than anything else in the game. The answer that got you
+   * there is the wrong answer for what is left, which is the whole point of
+   * her -- and the reason it is a phase rather than a second creature is that
+   * the health bar you have been chipping at is the timer.
+   */
+  matriarch: {
+    id: 'matriarch',
+    name: 'The Matriarch',
+    // Sized against the clock rather than by feel. Seven hundred behind a
+    // tenth-damage front took a circling player eighty-nine seconds, which is
+    // not an encounter, it is an errand.
+    hp: 520,
+    speed: 0.9,
+    radius: 0.7,
+    // Nearly the full height of the room. The silhouette is most of what a
+    // boss is at this resolution.
+    height: 0.92,
+    damage: 15,
+    attackRange: 9,
+    attackCooldown: 2.2,
+    attackWindup: 0.7,
+    // She flinches, but not much, and not at all once the shell is off.
+    painChance: 0.2,
+    painTime: 0.25,
+    commitAt: 0.3,
+    dyingTime: 1.4,
+    sightCone: 1.6,
+    sightRange: 24,
+    // Unreachable on purpose: nothing in the arsenal comes near it, and a boss
+    // that can be blown to pieces by a lucky volley has no ending.
+    gibThreshold: 900,
+    reactionTime: 0.5,
+    color: 0xc46a9a,
+    darkColor: 0x5a2440,
+    shape: 'matriarch',
+    // Softer than the Shellback's tenth, because there is sixty times as much
+    // of her to get through: at a tenth the front is not a reason to move
+    // round, it is a reason to stop shooting.
+    armour: { arc: 1.3, multiplier: 0.22 },
+    // Backs off to keep you at throwing distance, comfortably inside her reach.
+    standoff: 6,
+    charge: null,
+    deathBurst: { damage: 55, radius: 4.5 },
+    projectile: { speed: 8.5, radius: 0.3 },
+    enrage: {
+      below: 0.4,
+      def: {
+        armour: null,
+        standoff: 0,
+        projectile: null,
+        charge: 5.2,
+        speed: 1.7,
+        attackRange: 2.4,
+        attackCooldown: 1.5,
+        attackWindup: 0.5,
+        damage: 30,
+        painChance: 0.05,
+        reactionTime: 0.2,
+      },
+    },
   },
 }
 

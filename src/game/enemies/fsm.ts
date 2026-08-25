@@ -68,6 +68,20 @@ export function canSee(def: EnemyDef, perception: Perception): boolean {
 }
 
 /**
+ * The numbers it is fighting by right now.
+ *
+ * Everything that reads a stat goes through here, so a phase change reaches
+ * the whole machine at once rather than the three places somebody remembered.
+ * Returns the def itself when there is no second phase, which is every
+ * creature but one -- so this costs nothing for the ones that do not use it.
+ */
+export function activeDef(mind: EnemyMind, def: EnemyDef): EnemyDef {
+  const rage = def.enrage
+  if (!rage || mind.hp > def.hp * rage.below) return def
+  return { ...def, ...rage.def }
+}
+
+/**
  * Has a wind-up gone far enough that the swing can no longer be taken off it?
  *
  * Rolling the pain chance is not enough on its own. A stagger overwrites
@@ -100,9 +114,12 @@ function committed(mind: EnemyMind, def: EnemyDef): boolean {
  * early and you interrupt it, shoot it late and you wear the hit even if the
  * shot kills it. Dying still beats commitment -- a corpse does not swing.
  */
-export function damage(mind: EnemyMind, def: EnemyDef, amount: number, rng: () => number): void {
+export function damage(mind: EnemyMind, base: EnemyDef, amount: number, rng: () => number): void {
   if (!isAlive(mind)) return
 
+  // Read BEFORE the damage lands, so the hit that crosses the threshold is
+  // still governed by the phase it was dealt into.
+  const def = activeDef(mind, base)
   const locked = committed(mind, def)
 
   mind.hp -= amount
@@ -145,7 +162,8 @@ const WATCH: Intent = { velocity: 0, turn: true }
  * Advance one fixed step. Returns what the enemy wants to do; the caller owns
  * actually moving it, because movement needs the level and collision.
  */
-export function step(mind: EnemyMind, def: EnemyDef, perception: Perception, dt: number): Intent {
+export function step(mind: EnemyMind, base: EnemyDef, perception: Perception, dt: number): Intent {
+  const def = activeDef(mind, base)
   mind.didStrike = false
   mind.justDied = false
 

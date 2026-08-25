@@ -15,7 +15,7 @@
 | G4. Enemies wave 2            | Complete    | 2026-08-24 | Diagnosed and fixed: the roster was stunlocked out of attacking. See #29                 |
 | G5. HUD, pickups, progression | Complete    | 2026-08-22 | Pickups, keycards, doors, secrets, exit, Doom tally, best time in localStorage           |
 | G6. Content (E1M2–E1M5)       | In Progress | 2026-08-24 | Level registry, progression and E1M2 shipped; E1M3–E1M5 outstanding                      |
-| G7. Boss                      | Not Started | —          | —                                                                                        |
+| G7. Boss                      | Complete    | 2026-08-25 | The Matriarch: two phases, new silhouette, in E1M5's nest. 32s duel, reaches phase two   |
 | G8. Music                     | Complete    | 2026-08-22 | Tone.js; composed 72-bar track, six sections; M mutes, `[` `]` set volume, persisted     |
 | G9. Mobile controls           | Not Started | —          | —                                                                                        |
 | G10. Polish                   | Not Started | —          | —                                                                                        |
@@ -82,9 +82,21 @@ build` is what CI runs, in that order.
    has no unit tests -- `world/scene.ts` and `campaign.ts` were extracted
    precisely so the testable parts could leave it, but `advance()` itself is
    verified by reading.
-2. **G7, the boss.** E1M5's nest was built to the shape a boss fight wants --
-   eleven cells by eighteen, pillared, with two ways in -- and is deliberately
-   not full of creatures.
+2. **G9, mobile controls, and G10, polish.** The last two gameplay phases.
+   G9 is the more tractable of the two without a device: the touch-to-action
+   mapping is pure logic and can be unit tested the way `moveVector` already is.
+
+### The Matriarch
+
+Two phases in one body. While the plating holds she gives ground to keep the
+player at glob range and her front is soft-capped at 22%; under two fifths of
+her health the shell splits and she stops giving ground, stops throwing, stops
+flinching and charges. `activeDef` is the whole mechanism -- see CLAUDE.md.
+
+She guards the middle of the nest rather than plugging the exit, so she can be
+run past at the cost of the kill count. That means the playthrough bot does not
+fight her; `duel()` in `playthrough.test.ts` is what proves she is beatable.
+Killed in 32s by a circling player, costing 95 health, reaching phase two.
 
 ### What the bot cost, per level
 

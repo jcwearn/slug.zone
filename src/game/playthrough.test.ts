@@ -23,7 +23,7 @@ import {
   updateEnemy,
   type Enemy,
 } from './enemies/enemy.ts'
-import { damage as damageEnemy } from './enemies/fsm.ts'
+import { activeDef, damage as damageEnemy, isAlive as isAliveEnemy } from './enemies/fsm.ts'
 import { nearestHit, verticalAutoAim } from './enemies/hitscan.ts'
 import { Globs } from './enemies/projectiles.ts'
 import { atExit, createSession, tickRun } from './session.ts'
@@ -401,6 +401,159 @@ function play(source: (typeof LEVELS)[number]): Report {
     died: health.dead,
   }
 }
+
+/**
+ * A duel in an empty room: one player, one Matriarch, nothing else.
+ *
+ * The playthrough cannot answer this. A bot heading for the exit will walk
+ * past anything that is not in the doorway, so E1M5 finishing proves only that
+ * the level can be finished -- not that the thing standing in the middle of it
+ * can be killed, or that killing it is a fight rather than an afternoon.
+ *
+ * The player here strafes around the target while shooting, which is what the
+ * armour asks for and roughly what a person does.
+ */
+function duel(typeId: string) {
+  const arena = parseLevel({
+    ...LEVELS[0],
+    grid: Array.from({ length: 17 }, (_, z) =>
+      z === 0 || z === 16 ? '#'.repeat(17) : '#' + '.'.repeat(15) + '#',
+    ),
+    entities: [{ type: 'player', x: 8.5, z: 13.5 }],
+  })
+  const space = worldSpace(arena)
+  const s = arena.cellSize
+  const rng = mulberry32(4)
+
+  const player = createPlayer(arena)
+  const health = createHealth()
+  const arsenal = createArsenal()
+  arsenal.owned.add('grinder')
+  arsenal.ammo.coarse = 60
+
+  const foe = spawnEnemy(typeId, 8.5, 4.5)
+  const globs = new Globs()
+  const held = new Set<Action>()
+  const input = { isDown: (a: Action) => held.has(a), consumeLook: () => ({ yaw: 0, pitch: 0 }) }
+
+  let t = 0
+  let sawSecondPhase = false
+  let damageTaken = 0
+
+  while (t < 180 && !health.dead && isAliveEnemy(foe.mind)) {
+    if (activeDef(foe.mind, foe.def) !== foe.def) sawSecondPhase = true
+
+    // Face it, and circle. Strafing is what the plating asks for, and the
+    // direction flips on a slow beat so it works its way all the way round
+    // rather than oscillating over the same arc.
+    player.yaw = facing(player.x, player.z, foe.x, foe.z)
+    const flat = Math.hypot(foe.x - player.x, foe.z - player.z) * s
+    player.pitch = Math.atan2(
+      (foe.def.height * arena.wallHeight) / 2 - space.eyeY(EYE_HEIGHT),
+      Math.max(flat, 1e-6),
+    )
+    held.clear()
+    held.add(Math.floor(t / 3) % 2 === 0 ? 'left' : 'right')
+    if (Math.hypot(foe.x - player.x, foe.z - player.z) > 5) held.add('forward')
+
+    const shot = fire(arsenal, rng)
+    if (shot.fired) {
+      const targets = [{ target: foe, cylinder: enemyCylinder(foe, s, arena.wallHeight) }]
+      const eyeY = space.eyeY(EYE_HEIGHT)
+      let total = 0
+      for (const offset of shot.angles!) {
+        const raw = aimDirection(player.yaw + offset, player.pitch)
+        const hit = nearestHit(
+          player.x * s,
+          eyeY,
+          player.z * s,
+          raw.x,
+          raw.y,
+          raw.z,
+          targets,
+          shot.def!.range * s,
+        )
+        if (hit)
+          total += damageAtRange(shot.def!, hit.distance / s) * armourScale(foe, player.x, player.z)
+      }
+      if (total > 0) damageEnemy(foe.mind, foe.def, total, rng)
+    }
+
+    updatePlayer(player, arena, input, STEP, [{ x: foe.x, z: foe.z, radius: foe.def.radius }])
+
+    const before = health.hp + health.armour
+    if (foe.mind.justDied) damagePlayer(health, burstDamage(foe, player.x, player.z))
+    updateEnemy(foe, arena, player.x, player.z, STEP, PLAYER_RADIUS)
+    if (foe.mind.didStrike) {
+      const ranged = activeDef(foe.mind, foe.def).projectile
+      if (ranged) {
+        const glob = globs.spawn(
+          foe.x,
+          foe.z,
+          foe.def.height * arena.wallHeight * 0.8,
+          player.x,
+          player.z,
+          space.eyeY(EYE_HEIGHT) - 0.35,
+          ranged.speed,
+          activeDef(foe.mind, foe.def).damage,
+        )
+        if (glob) glob.radius = ranged.radius
+      } else {
+        damagePlayer(health, activeDef(foe.mind, foe.def).damage)
+      }
+    }
+    for (const outcome of globs.step(
+      arena,
+      STEP,
+      player.x,
+      player.z,
+      PLAYER_RADIUS,
+      arena.wallHeight,
+      space.floorY,
+      space.eyeY(EYE_HEIGHT) + 0.25,
+    )) {
+      if (outcome.kind === 'hit') damagePlayer(health, outcome.damage)
+    }
+    damageTaken += Math.max(0, before - (health.hp + health.armour))
+
+    tickArsenal(arsenal, STEP)
+    tickHealth(health, STEP)
+    t += STEP
+  }
+
+  return {
+    seconds: t,
+    killed: !isAliveEnemy(foe.mind),
+    survived: !health.dead,
+    sawSecondPhase,
+    damageTaken,
+  }
+}
+
+describe('the Matriarch', () => {
+  const fight = duel('matriarch')
+
+  it('can be killed by a player who circles and shoots', () => {
+    expect(fight.killed, `still standing after ${fight.seconds.toFixed(0)}s`).toBe(true)
+  })
+
+  it('is a fight rather than an afternoon', () => {
+    // Long enough to be an event, short enough to stay one. A boss that takes
+    // three minutes of holding the trigger is a health bar, not an encounter.
+    expect(fight.seconds).toBeGreaterThan(8)
+    expect(fight.seconds).toBeLessThan(75)
+  })
+
+  it('reaches its second phase before it dies', () => {
+    // Otherwise the phase is decoration: the whole design is that the answer
+    // which got you to forty percent stops working there.
+    expect(fight.sawSecondPhase).toBe(true)
+  })
+
+  it('costs the player something', () => {
+    expect(fight.damageTaken).toBeGreaterThan(0)
+  })
+})
 
 describe('a headless playthrough', () => {
   const played = LEVELS.map((source) => [source.id, play(source)] as const)

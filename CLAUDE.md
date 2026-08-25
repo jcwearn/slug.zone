@@ -58,6 +58,28 @@ punched in it, and the corners must actually be cleared — because fixing one o
 those is how the other got broken. The private reference photo is not in this
 repo and must stay out; only the generated sheet is committed.
 
+**A phase is what makes a boss, and `activeDef` is where it lives.**
+`EnemyDef.enrage` is a partial def that replaces its fields below a fraction of
+full health, and EVERYTHING that reads a stat goes through `activeDef(mind,
+def)` -- `step`, `damage` and `armourScale` all do, which is what stops a phase
+change reaching three of the five places that care. Read it before applying
+damage, so the hit that crosses the threshold is still governed by the phase it
+was dealt into. `activeDef` returns the def itself when there is no second
+phase, so it costs the other five creatures nothing.
+
+Tested two-sided: never engaging and engaging immediately both fail. The
+assertion that matters is on the INTENT rather than on the numbers -- a phase
+that reads differently and behaves the same is decoration.
+
+**The Matriarch can be walked past, and that is allowed.** She guards the middle
+of E1M5's nest rather than plugging the exit, so a player running for the door
+can skip her at the cost of the kill percentage -- which is what Doom does. It
+also means `playthrough.test.ts` cannot tell you she is beatable, because the
+bot does exactly that. The `duel()` fixture in that file is what holds it: an
+empty room, one player circling and shooting, and assertions that she dies, that
+it takes between eight and seventy-five seconds, and that the fight reaches its
+second phase before it ends.
+
 **A new enemy type is not a new colour.** `buildEnemyView` branches on
 `def.shape`; a type that reuses another's body is a reskin however different
 its numbers are, because at 320x200 through fog the silhouette is nearly all

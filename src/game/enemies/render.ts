@@ -187,6 +187,46 @@ function buildBody(
       return { y: 0.95, z: -0.6, spread: 0.16, scale: 0.85 }
     }
 
+    case 'matriarch': {
+      // Read from the silhouette out. At 320x200 through fog the outline is
+      // very nearly all the player gets, so the shape has to say "this one is
+      // different" before any of the numbers do: a broad hooded plate over a
+      // heavy body, wider at the shoulder than anything else in the game, on a
+      // long low foot that puts the head high.
+      const hood = new THREE.Mesh(domeGeo, dark)
+      hood.scale.set(1.5, 1.05, 1.25)
+      hood.position.set(0, 0.62, 0.16)
+      body.add(hood)
+
+      // A pale seam under the hood. It is the only bright line on her, so it
+      // is what the eye follows round when the player is working out which way
+      // she is facing -- which is the whole fight while the plating holds.
+      const seam = new THREE.Mesh(blobGeo, skin)
+      seam.scale.set(1.42, 0.14, 1.16)
+      seam.position.set(0, 0.56, 0.16)
+      body.add(seam)
+
+      const shoulder = new THREE.Mesh(blobGeo, dark)
+      shoulder.scale.set(1.28, 0.5, 1.0)
+      shoulder.position.set(0, 0.4, 0.1)
+      body.add(shoulder)
+
+      // Sits high enough that the squash in `poseEnemy` cannot push it through
+      // the floor. `render.test.ts` sweeps every state and every frame of the
+      // death animation for exactly this, and caught it at -0.037.
+      const foot = new THREE.Mesh(blobGeo, skin)
+      foot.scale.set(1.05, 0.3, 1.5)
+      foot.position.set(0, 0.22, -0.1)
+      body.add(foot)
+
+      const head = new THREE.Mesh(blobGeo, skin)
+      head.scale.set(0.62, 0.5, 0.62)
+      head.position.set(0, 0.6, -0.78)
+      body.add(head)
+
+      return { y: 0.78, z: -0.98, spread: 0.2, scale: 1.25 }
+    }
+
     case 'shell': {
       // A snail. The dome IS the armour, and it faces the same way the
       // creature does -- so what you can see of the shell is exactly what is
