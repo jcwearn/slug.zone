@@ -19,23 +19,36 @@ export const ENEMIES: Record<string, EnemyDef> = {
   grub: {
     id: 'grub',
     name: 'Grub',
-    hp: 15,
+    // Three Salt Shaker shots rather than two. At 15 it died in 0.28s while
+    // needing 0.40s to notice you and bite -- so it could not land a hit even
+    // in principle, and no amount of pain tuning reaches that. It is still the
+    // flimsiest thing in the roster; the swarm is the threat, not the Grub.
+    hp: 28,
     speed: 2.4,
     radius: 0.3,
     height: 0.35,
     damage: 6,
     attackRange: 0.85,
     attackCooldown: 0.9,
-    attackWindup: 0.25,
+    // Quick off the mark rather than tough. The Grub should stay a three-shot
+    // pushover -- what was wrong was that it took LONGER to bite than to die,
+    // and the fix for a swarmer is to make it faster, not to give it a health
+    // pool it has no business having.
+    attackWindup: 0.2,
     painChance: 0.75,
     painTime: 0.25,
+    // Flinches at almost anything, so without a commit point it never bites at
+    // all -- it is the roster's most staggerable creature and its wind-up is
+    // the shortest. A late one: the swarm is meant to punish standing still,
+    // not to be unstoppable once it has started.
+    commitAt: 0.3,
     dyingTime: 0.45,
     // Nearly all-round awareness: a swarmer that can be walked behind is not a
     // swarmer.
     sightCone: 2.4,
     sightRange: 14,
-    gibThreshold: 20,
-    reactionTime: 0.15,
+    gibThreshold: 38,
+    reactionTime: 0.1,
     color: SLUG_BROWN,
     darkColor: SLUG_DARK,
     shape: 'slug',
@@ -49,7 +62,10 @@ export const ENEMIES: Record<string, EnemyDef> = {
   spitter: {
     id: 'spitter',
     name: 'Spitter',
-    hp: 40,
+    // Same problem as the Grub and worse: a 0.55s wind-up on top of a 0.35s
+    // reaction meant 0.90s to its first glob against a 0.78s life expectancy.
+    // Five shots at its preferred range, where falloff has taken 12 down to 11.
+    hp: 55,
     speed: 1.5,
     radius: 0.36,
     height: 0.5,
@@ -61,11 +77,15 @@ export const ENEMIES: Record<string, EnemyDef> = {
     attackWindup: 0.55,
     painChance: 0.4,
     painTime: 0.3,
+    // Committing matters more for the one that fights at range: it is being
+    // shot at for the whole of its long wind-up, which is exactly the
+    // situation the stagger loop was eating.
+    commitAt: 0.35,
     dyingTime: 0.6,
     sightCone: 1.2,
     sightRange: 18,
-    gibThreshold: 45,
-    reactionTime: 0.35,
+    gibThreshold: 62,
+    reactionTime: 0.3,
     color: 0x7a9c3a,
     darkColor: 0x3c4a1c,
     shape: 'slug',
@@ -100,6 +120,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     // matter, and getting close is the entire point of it.
     painChance: 0.15,
     painTime: 0.2,
+    commitAt: 0.4,
     dyingTime: 0.5,
     sightCone: 2.0,
     sightRange: 12,
@@ -120,7 +141,9 @@ export const ENEMIES: Record<string, EnemyDef> = {
   brute: {
     id: 'brute',
     name: 'Banana Brute',
-    hp: 70,
+    // Seven shots. Also takes it back out of one-shot range for a point-blank
+    // Grinder volley, which at 72 killed it outright before it could swing.
+    hp: 80,
     // Slow to walk, fast to lunge. The gap between the two is the tell.
     speed: 1.6,
     radius: 0.44,
@@ -133,6 +156,11 @@ export const ENEMIES: Record<string, EnemyDef> = {
     attackWindup: 0.55,
     painChance: 0.3,
     painTime: 0.22,
+    // The earliest commit in the roster, because the lunge IS the creature.
+    // There is still a window at the top of the wind-up where a shot stops it,
+    // so reading the tell and reacting is rewarded -- what is gone is stopping
+    // it by holding the trigger down and never looking at it.
+    commitAt: 0.3,
     dyingTime: 0.7,
     sightCone: 1.4,
     sightRange: 16,
@@ -143,9 +171,14 @@ export const ENEMIES: Record<string, EnemyDef> = {
     shape: 'brute',
     armour: null,
     standoff: 0,
-    // Covers most of its own reach during the wind-up, so backing straight up
-    // does not save you and stepping aside does.
-    charge: 8.5,
+    // Enough to close on a player who backs straight up at a sprint, and not a
+    // great deal more. At 8.5 it covered 4.7 cells to a sprinter's 2.5 during
+    // the same 0.55s, which is not a lunge you dodge -- it is one you wear.
+    //
+    // Stepping aside is the answer, and it only became an answer once the
+    // lunge stopped homing: `enemy.ts` latches the direction when the wind-up
+    // begins, so this travels the line you were standing on.
+    charge: 4.5,
     deathBurst: null,
     projectile: null,
   },
@@ -153,7 +186,9 @@ export const ENEMIES: Record<string, EnemyDef> = {
   shellback: {
     id: 'shellback',
     name: 'Shellback',
-    hp: 55,
+    // Measured from BEHIND, which is the only side these numbers describe --
+    // the front is a different weapon entirely.
+    hp: 65,
     speed: 1.2,
     radius: 0.42,
     height: 0.5,
@@ -163,12 +198,13 @@ export const ENEMIES: Record<string, EnemyDef> = {
     attackWindup: 0.4,
     painChance: 0.5,
     painTime: 0.25,
+    commitAt: 0.35,
     dyingTime: 0.6,
     // Narrow: the plating faces where it is looking, so its blind spot and its
     // soft spot are the same place and getting behind it does two jobs.
     sightCone: 0.9,
     sightRange: 14,
-    gibThreshold: 60,
+    gibThreshold: 70,
     reactionTime: 0.4,
     color: 0xb0703a,
     darkColor: 0x50301a,

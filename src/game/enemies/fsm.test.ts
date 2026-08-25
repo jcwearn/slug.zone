@@ -9,6 +9,7 @@ import {
   type Perception,
 } from './fsm.ts'
 import { ENEMIES } from './definitions.ts'
+import type { EnemyDef } from './types.ts'
 import { mulberry32 } from '../engine/math.ts'
 
 const grub = ENEMIES.grub
@@ -235,6 +236,124 @@ describe('damage and death', () => {
     expect(mind.justDied).toBe(true)
     step(mind, grub, seeing(6), STEP)
     expect(mind.justDied).toBe(false)
+  })
+})
+
+/**
+ * Design floors for "does it get to fight back", measured at the attack range
+ * under continuous Salt Shaker fire.
+ *
+ * These are targets, not observations: a creature that lands a hit in fewer
+ * engagements than this is a target rather than an enemy. Each sits between
+ * the rate WITHOUT the commit rule and the rate with it, so removing the rule
+ * breaks them -- except the Slimebloat, which barely flinches by design
+ * (`painChance` 0.15) and was never a victim of the stagger loop. Its entry is
+ * a floor on the design, not a guard on the rule, and it is listed rather than
+ * skipped so a future change that DOES make it staggerable gets caught.
+ */
+const FIGHTS_BACK: Record<string, number> = {
+  grub: 0.35,
+  spitter: 0.33,
+  slimebloat: 0.9,
+  brute: 0.8,
+  shellback: 0.7,
+}
+
+describe('attack commitment', () => {
+  /** Walk a fresh mind to the first tick of its wind-up. */
+  const winding = (def: EnemyDef): EnemyMind => {
+    const m = createMind(def)
+    for (let i = 0; i < 600 && m.state !== 'attack'; i++) {
+      step(m, def, seeing(def.attackRange * 0.5), STEP)
+    }
+    expect(m.state).toBe('attack')
+    return m
+  }
+
+  /** Advance a wind-up to `fraction` of the way through it. */
+  const intoWindup = (m: EnemyMind, def: EnemyDef, fraction: number) => {
+    const target = def.attackWindup * (1 - fraction)
+    for (let i = 0; i < 600 && m.timer > target; i++) {
+      step(m, def, seeing(def.attackRange * 0.5), STEP)
+    }
+  }
+
+  const each = Object.values(ENEMIES).map((d) => [d.id, d] as const)
+
+  it.each(each)('%s can still be staggered early in the wind-up', (_id, def) => {
+    // Commitment is a point in the wind-up, not a blanket immunity. Reading
+    // the tell and shooting in time has to still work, or the creature is
+    // simply unstoppable once it starts -- which is the opposite bug.
+    const m = winding(def)
+    damage(m, def, 1, always)
+    expect(m.state).toBe('pain')
+  })
+
+  it.each(each)('%s cannot be staggered once the swing is committed', (_id, def) => {
+    const m = winding(def)
+    intoWindup(m, def, Math.min(1, def.commitAt + 0.2))
+    damage(m, def, 1, always)
+    expect(m.state).toBe('attack')
+  })
+
+  it.each(each)('%s still takes damage while committed', (_id, def) => {
+    const m = winding(def)
+    intoWindup(m, def, Math.min(1, def.commitAt + 0.2))
+    const before = m.hp
+    damage(m, def, 7, always)
+    expect(m.hp).toBe(before - 7)
+  })
+
+  it.each(each)('%s dies mid-swing rather than finishing it', (_id, def) => {
+    // Commitment must not outrank death, or a corpse gets a free hit.
+    const m = winding(def)
+    intoWindup(m, def, Math.min(1, def.commitAt + 0.2))
+    damage(m, def, 9999, always)
+    expect(m.state).toBe('dying')
+  })
+
+  /**
+   * The regression the whole rule exists for.
+   *
+   * A stagger overwrites `timer`, which IS the wind-up clock, and the attack
+   * cooldown keeps running through the stagger -- so before this rule a weapon
+   * firing faster than the wind-up completed deleted attacks in a loop and the
+   * creature died having never hit back. Measured over 400 seeded lives at the
+   * ORIGINAL numbers, a Grub landed a strike in 0% of them and a Brute in 48%.
+   *
+   * Asserted over many seeds because the pain roll is random: one seed proves
+   * nothing either way. Deliberately not asserted at 100% -- see the "can still
+   * be staggered early" case above.
+   */
+  it.each(each)('%s fights back before it dies, under sustained fire', (_id, def) => {
+    const SHOT_INTERVAL = 0.25
+    const SHOT_DAMAGE = 12
+    const LIVES = 200
+    let fought = 0
+
+    for (let seed = 1; seed <= LIVES; seed++) {
+      const m = createMind(def)
+      const rng = mulberry32(seed)
+      const p = seeing(def.attackRange * 0.9)
+      let struck = false
+      let nextShot = 0
+      for (let t = 0; isAlive(m) && t < 30; t += STEP) {
+        step(m, def, p, STEP)
+        if (m.didStrike) struck = true
+        if (t >= nextShot) {
+          damage(m, def, SHOT_DAMAGE, rng)
+          nextShot = t + SHOT_INTERVAL
+        }
+      }
+      if (struck) fought++
+    }
+
+    expect(fought / LIVES).toBeGreaterThanOrEqual(FIGHTS_BACK[def.id])
+  })
+
+  it('gives every enemy a fight-back floor', () => {
+    // A new enemy type must state its floor rather than inherit silence.
+    expect(Object.keys(FIGHTS_BACK).sort()).toEqual(Object.keys(ENEMIES).sort())
   })
 })
 

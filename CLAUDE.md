@@ -64,6 +64,33 @@ its numbers are, because at 320x200 through fog the silhouette is nearly all
 the player gets. `render.test.ts` iterates `ENEMIES`, so every new type
 inherits the floor-clearance property automatically.
 
+**Pain must not be able to delete a committed attack.** `damage()` moves an
+enemy into `pain` from any live state, and `pain` overwrites `mind.timer` --
+which IS the wind-up clock. Because `attackCooldown` keeps running through the
+stagger, a staggered creature restarts a FULL wind-up the instant it recovers,
+so any weapon firing faster than the wind-up completes deletes attacks in a
+loop. That is why the roster shipped unable to fight back: over 400 seeded lives
+a Grub landed a hit in 0% of them and a Brute in 48%, and tripling every health
+pool did not fix it, because it is a race between the wind-up and the trigger
+rather than a health problem. `def.commitAt` is the fraction of the wind-up past
+which the stagger is refused. It is two-sided and both halves are tested: at 0
+the creature becomes unstoppable once it twitches, at 1 the bug is back.
+
+**A volley is ONE hit.** `resolveVolley` sums a shotgun's pellets per creature
+and applies the total in a single `damage` call. Applying pellets individually
+made the largest single damage instance in the game 12, against a lowest
+`gibThreshold` of 38 -- so gibbing was unreachable and `playGib` was dead code --
+and it rolled the pain chance eight times per blast, which fed the loop above.
+`gibThreshold >= hp` is an invariant the suite holds: a gib is one-blow overkill.
+
+**A lunge latches its direction.** `enemy.ts` recomputes the heading to the
+player every tick, which for a charger meant the lunge homed and could not be
+sidestepped however the comments described it. `Enemy.lungeX/lungeZ` freeze the
+line when the wind-up begins and clear when it ends -- a stale one would steer
+the next lunge. `charge` is now sized against a sprinting player (2.6 * 1.75)
+rather than well past them; at 8.5 it covered 4.7 cells to their 2.5 and backing
+off was not a choice either.
+
 **`Intent.velocity` is signed, and attacking beats retreating.** Negative
 velocity walks the line to the player backwards — a kiter giving ground without
 turning its back. The FSM tests the attack branch first on purpose: a kiter

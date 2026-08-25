@@ -25,6 +25,7 @@ import { loadSettings, saveSettings, stepVolume, volumePercent } from './save/se
 import { aimDirection, shotEndpoint } from './player/aim.ts'
 import {
   armourScale,
+  burstChain,
   burstDamage,
   enemyCylinder,
   separateEnemies,
@@ -56,6 +57,7 @@ import {
   playSquelch,
   playGrinderBlast,
   playImpact,
+  playRicochet,
   playDeath,
   playHurt,
   playSaltBlast,
@@ -311,7 +313,15 @@ let lastPhase = arsenal.phase
  */
 const AUTOAIM_CONE = 0.25
 
-function shootPellet(angleOffset: number): void {
+/** One pellet's worth of damage, held back so a volley lands as a single hit. */
+interface PelletHit {
+  target: Enemy
+  damage: number
+  /** What the armour let through, 1 for a clean hit. */
+  shield: number
+}
+
+function shootPellet(angleOffset: number): PelletHit | null {
   const def = definition(arsenal)
   const raw = aimDirection(player.yaw + angleOffset, player.pitch)
 
@@ -379,8 +389,6 @@ function shootPellet(angleOffset: number): void {
     // the mind has no idea where the player is standing.
     const shield = armourScale(struck.target, player.x, player.z)
     const dealt = damageAtRange(def, struck.distance / s) * shield
-    const wasAlive = isAlive(struck.target.mind)
-    damageEnemy(struck.target.mind, struck.target.def, dealt, rng)
 
     const hx = muzzleX + dir.x * struck.distance
     const hy = muzzleY + dir.y * struck.distance
@@ -388,18 +396,8 @@ function shootPellet(angleOffset: number): void {
     tracers.emitShot(muzzleX, muzzleY, muzzleZ, hx, hy, hz, rng)
     tracers.emitImpact(hx, hy, hz, -dir.x, -dir.z, rng)
 
-    if (wasAlive && struck.target.mind.justDied) {
-      if (struck.target.mind.gibbed) playGib()
-      else playSquelch(rng())
-    } else if (shield < 1) {
-      // A ricochet, not a squelch. A creature soaking nine tenths of every
-      // shot while still sounding wet reads as a broken weapon rather than as
-      // armour, and the player never works out to go round it.
-      playImpact()
-    } else {
-      playSquelch(rng() * 0.5)
-    }
-    return
+    // Damage is NOT applied here. See `resolveVolley`.
+    return { target: struck.target, damage: dealt, shield }
   }
 
   tracers.emitShot(muzzleX, muzzleY, muzzleZ, endX, endY, endZ, rng)
@@ -410,6 +408,54 @@ function shootPellet(angleOffset: number): void {
     const nz = end.stoppedBy === 'wall' && wallHit ? wallHit.normalZ : 0
     tracers.emitImpact(endX, endY, endZ, nx, nz, rng)
     playImpact()
+  }
+  return null
+}
+
+/**
+ * Fire every pellet, then apply each creature's total as ONE hit.
+ *
+ * Per-pellet application made a shotgun blast eight separate events, which was
+ * wrong three ways. `gibThreshold` became unreachable: the largest single
+ * instance in the game is a 12-point Salt Shaker shot at the muzzle, and no
+ * threshold in the roster is anywhere near that low, so `mind.gibbed` could
+ * never be true and `playGib` was dead code. It rolled the pain chance eight
+ * times, making a Grinder blast a near-guaranteed stagger and feeding the loop
+ * that left the roster unable to fight back. And it stacked eight squelches
+ * into mud.
+ *
+ * A volley is one hit from the creature's point of view, so it is one call.
+ *
+ * `shield` is taken from the first pellet to land and not re-read, because
+ * `armourScale` measures from the PLAYER's position rather than each pellet's
+ * -- every pellet in a volley therefore hits the same plating from the same
+ * side, and averaging them would only reintroduce rounding.
+ */
+function resolveVolley(angles: number[]): void {
+  const totals = new Map<Enemy, { damage: number; shield: number }>()
+  for (const angle of angles) {
+    const hit = shootPellet(angle)
+    if (!hit) continue
+    const seen = totals.get(hit.target)
+    if (seen) seen.damage += hit.damage
+    else totals.set(hit.target, { damage: hit.damage, shield: hit.shield })
+  }
+
+  for (const [enemy, total] of totals) {
+    const wasAlive = isAlive(enemy.mind)
+    damageEnemy(enemy.mind, enemy.def, total.damage, rng)
+
+    if (wasAlive && enemy.mind.justDied) {
+      if (enemy.mind.gibbed) playGib()
+      else playSquelch(rng())
+    } else if (total.shield < 1) {
+      // A ricochet, not a squelch. A creature soaking nine tenths of every
+      // shot while still sounding wet reads as a broken weapon rather than as
+      // armour, and the player never works out to go round it.
+      playRicochet()
+    } else {
+      playSquelch(rng() * 0.5)
+    }
   }
 }
 
@@ -547,7 +593,7 @@ new Loop({
     if (input.isDown('fire')) {
       const result = fire(arsenal, rng)
       if (result.fired) {
-        for (const angle of result.angles!) shootPellet(angle)
+        resolveVolley(result.angles!)
         viewmodel.onFire()
         snarlTimer = 0.35
         if (result.def!.id === 'grinder') playGrinderBlast(rng())
@@ -577,6 +623,15 @@ new Loop({
           if (result.died) playDeath()
           else if (result.applied) playHurt(rng())
         }
+
+        // The other half of that comment, which was never actually written:
+        // the burst caught the player and nothing else, so two Slimebloats
+        // side by side did not chain.
+        burstChain(
+          entry.enemy,
+          live.map((l) => l.enemy),
+          rng,
+        )
         if (entry.enemy.def.deathBurst) {
           tracers.emitImpact(
             entry.enemy.x * s,

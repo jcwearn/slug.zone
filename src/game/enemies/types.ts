@@ -21,13 +21,37 @@ export interface EnemyDef {
   painChance: number
   /** Seconds a stagger lasts. */
   painTime: number
+  /**
+   * How far into a wind-up an attack becomes un-cancellable, as a fraction of
+   * `attackWindup`. 1 leaves it interruptible to the last instant.
+   *
+   * Without this a fast weapon deletes attacks faster than they complete: the
+   * stagger overwrites the wind-up clock, and because the cooldown keeps
+   * running through the stagger the creature restarts a FULL wind-up the
+   * moment it recovers. That loop is why the roster died without fighting
+   * back -- measured over 400 seeds, a Grub landed a hit in 0% of its lives
+   * and a Brute in 48%, and tripling everyone's health did not fix it because
+   * the loop is a race between the wind-up and the trigger, not the health
+   * pool.
+   *
+   * Past the commit point the creature still takes the damage and can still
+   * be killed mid-swing; it just cannot have the swing taken off it.
+   */
+  commitAt: number
   /** Seconds the death animation runs before the corpse settles. */
   dyingTime: number
   /** Half-angle of its forward vision, radians. */
   sightCone: number
   /** Grid units it can notice the player from. */
   sightRange: number
-  /** Damage in one hit at or above this gibs it instead of a normal death. */
+  /**
+   * Damage in one hit at or above this gibs it instead of a normal death.
+   *
+   * "One hit" means one VOLLEY -- `resolveVolley` sums a shotgun's pellets per
+   * creature before applying them. While each pellet landed separately the
+   * largest single instance in the game was 12 against a lowest threshold of
+   * 20, so this was unreachable and `playGib` was dead code.
+   */
   gibThreshold: number
   /** Seconds after alerting before it starts moving. */
   reactionTime: number

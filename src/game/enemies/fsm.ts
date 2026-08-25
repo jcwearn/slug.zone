@@ -68,15 +68,42 @@ export function canSee(def: EnemyDef, perception: Perception): boolean {
 }
 
 /**
+ * Has a wind-up gone far enough that the swing can no longer be taken off it?
+ *
+ * Rolling the pain chance is not enough on its own. A stagger overwrites
+ * `timer`, which IS the wind-up clock, so the pending strike is discarded --
+ * and because `attackCooldown` keeps running through the stagger, the creature
+ * restarts a FULL wind-up the instant it recovers. A weapon that fires faster
+ * than the wind-up completes therefore deletes attacks in a loop, and the
+ * creature dies having never once hit back.
+ *
+ * That is not a health problem and cannot be fixed with one: over 400 seeded
+ * lives a Grub landed a hit in 0% of them, and tripling every health pool in
+ * the roster still left it silent in 91%. It is a race between the wind-up and
+ * the trigger, so the fix belongs at the wind-up.
+ */
+function committed(mind: EnemyMind, def: EnemyDef): boolean {
+  if (mind.state !== 'attack' || def.attackWindup <= 0) return false
+  const progress = 1 - mind.timer / def.attackWindup
+  return progress >= def.commitAt
+}
+
+/**
  * Apply damage.
  *
  * Pain is rolled, not guaranteed. Guaranteed stagger means a fast enough weapon
  * locks an enemy in place permanently -- the classic chaingun stunlock -- and
  * removes any reason to move. It is also why the roll takes an injected rng:
  * "does this weapon stunlock" is a question worth answering in a test.
+ *
+ * A committed swing is immune to the stagger but NOT to the damage: shoot it
+ * early and you interrupt it, shoot it late and you wear the hit even if the
+ * shot kills it. Dying still beats commitment -- a corpse does not swing.
  */
 export function damage(mind: EnemyMind, def: EnemyDef, amount: number, rng: () => number): void {
   if (!isAlive(mind)) return
+
+  const locked = committed(mind, def)
 
   mind.hp -= amount
   mind.provoked = true
@@ -89,7 +116,7 @@ export function damage(mind: EnemyMind, def: EnemyDef, amount: number, rng: () =
     return
   }
 
-  if (rng() < def.painChance) {
+  if (!locked && rng() < def.painChance) {
     mind.state = 'pain'
     mind.timer = def.painTime
   }

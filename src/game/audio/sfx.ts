@@ -144,6 +144,42 @@ export function playImpact(): void {
   src.stop(now + 0.06)
 }
 
+/**
+ * Salt skidding off plate: a ringing tick that slides down in pitch.
+ *
+ * Distinct from `playImpact` on purpose. The two shared one sound, so a shot
+ * that glanced off a Shellback's shell was audibly identical to a shot that
+ * missed and hit the wall behind it -- which is the worst possible reading,
+ * because it tells the player their aim was off when in fact their aim was
+ * fine and their ANGLE was wrong. The armour is the one rule in the roster
+ * that asks the player to move rather than to aim, and it cannot teach that
+ * with the sound of a miss.
+ */
+export function playRicochet(): void {
+  const a = audio()
+  if (!a) return
+  const { ac, out, now } = a
+
+  // A tone rather than filtered noise: metal rings, stone ticks.
+  const osc = ac.createOscillator()
+  osc.type = 'square'
+  osc.frequency.setValueAtTime(2400, now)
+  osc.frequency.exponentialRampToValueAtTime(700, now + 0.16)
+
+  const band = ac.createBiquadFilter()
+  band.type = 'bandpass'
+  band.frequency.value = 1800
+  band.Q.value = 6
+
+  const gain = ac.createGain()
+  gain.gain.setValueAtTime(0.14, now)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
+
+  osc.connect(band).connect(gain).connect(out)
+  osc.start(now)
+  osc.stop(now + 0.2)
+}
+
 /** Refused shot: a dry click, so an empty weapon is audibly empty. */
 export function playDryFire(): void {
   const a = audio()
