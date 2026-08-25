@@ -3,6 +3,15 @@ import { drawText, measureText } from './font.ts'
 import type { Tally } from './tally.ts'
 
 /**
+ * What the click on this screen will do, and therefore what it should say.
+ *
+ * A discriminated union rather than a nullable level name, because there are
+ * three outcomes and two of them have no name: the caption and the click come
+ * from one value, so they cannot disagree.
+ */
+export type Outro = { kind: 'next'; name: string } | { kind: 'finished' } | { kind: 'replay' }
+
+/**
  * The level-complete tally, drawn into the 320x200 target.
  *
  * A canvas rather than DOM, unlike `#dead`. The death screen gets away with
@@ -58,18 +67,19 @@ export class Intermission {
    * a row with identical row values and the same best time would match the
    * previous signature and leave the old caption on screen.
    */
-  show(levelName: string, tally: Tally, nextName: string | null): void {
+  show(levelName: string, tally: Tally, outro: Outro): void {
     this.mesh.visible = true
     const signature = [
       levelName,
       ...tally.rows.map((r) => Math.floor(r.value)),
       tally.done,
       tally.best,
-      nextName ?? '',
+      outro.kind,
+      outro.kind === 'next' ? outro.name : '',
     ].join('|')
     if (signature === this.signature) return
     this.signature = signature
-    this.draw(levelName, tally, nextName)
+    this.draw(levelName, tally, outro)
   }
 
   hide(): void {
@@ -79,7 +89,7 @@ export class Intermission {
     this.signature = ''
   }
 
-  private draw(levelName: string, tally: Tally, nextName: string | null): void {
+  private draw(levelName: string, tally: Tally, outro: Outro): void {
     const ctx = this.ctx
     ctx.clearRect(0, 0, WIDTH, HEIGHT)
     ctx.fillStyle = 'rgba(4, 8, 3, 0.93)'
@@ -88,7 +98,8 @@ export class Intermission {
     const centred = (text: string, y: number, colour: string, scale: number) =>
       drawText(ctx, text, Math.round((WIDTH - measureText(text, scale)) / 2), y, colour, scale)
 
-    centred('LEVEL COMPLETE', 26, LIME, 2)
+    const ended = outro.kind === 'finished'
+    centred(ended ? 'THE CELLAR IS CLEAR' : 'LEVEL COMPLETE', 26, ended ? GOLD : LIME, 2)
     centred(levelName.toUpperCase(), 46, DIM, 1)
 
     // Rows are laid out on a fixed grid rather than centred as a whole, so the
@@ -115,11 +126,15 @@ export class Intermission {
         drawText(ctx, tally.best, valueRight - measureText(tally.best, 1), 170, colour, 1)
       }
 
-      if (nextName) {
-        // Doom's two-line form. The level name is drawn dim so the instruction
-        // stays the brightest thing on the screen -- it is what the click does.
-        centred(`ENTERING ${nextName.toUpperCase()}`, 178, DIM, 1)
+      // Doom's two-line form: what happens next, dim, above what to press.
+      // The instruction stays the brightest thing on the screen because it is
+      // the only thing on it the player has to act on.
+      if (outro.kind === 'next') {
+        centred(`ENTERING ${outro.name.toUpperCase()}`, 178, DIM, 1)
         centred('CLICK TO CONTINUE', 190, LIME, 1)
+      } else if (outro.kind === 'finished') {
+        centred('EVERY SLUG IN THE HOUSE ACCOUNTED FOR', 178, DIM, 1)
+        centred('CLICK TO GO ROUND AGAIN', 190, GOLD, 1)
       } else {
         centred('CLICK TO PLAY AGAIN', 186, LIME, 1)
       }

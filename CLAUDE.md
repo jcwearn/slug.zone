@@ -193,6 +193,16 @@ health, armour, weapons and ammo forward and drops the keycards
 on the previous one is unwinnable for anyone who died on it. No test can check
 this.
 
+**A resized canvas needs a NEW texture.** three.js allocates a texture's GPU
+storage once, with `texStorage2D`, and that allocation is immutable -- every
+later upload is a `texSubImage2D` into it. So `Minimap.resize` disposes its
+texture and builds another rather than pointing the same one at a bigger
+canvas, and repoints the material at it. The automap was first uploaded at
+E1M1's 60x51; E1M2, E1M3 and E1M4 all happen to fit inside that, and E1M5's
+64x40 does not -- so the nest, and only the nest, showed a frozen map. Every
+automap test passed for all five, because the bug is in the upload rather than
+in the layout.
+
 **The automap overflows past 33 cells.** `minimapLayout`'s scale has a floor of
 2 pixels per cell and that floor beats the size cap, so a level wider or taller
 than 33 silently overhangs the 320x200 target. `level.test.ts` fails on it per

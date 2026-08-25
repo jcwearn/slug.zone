@@ -1,6 +1,6 @@
 import type { PlayerHealth } from './player/health.ts'
 import type { Arsenal } from './weapons/arsenal.ts'
-import { nextLevel } from './world/levels/index.ts'
+import { levelIndex, nextLevel } from './world/levels/index.ts'
 import type { LevelSource } from './world/types.ts'
 
 /**
@@ -15,16 +15,38 @@ import type { LevelSource } from './world/types.ts'
 
 export type Onward =
   | { kind: 'advance'; next: LevelSource }
+  /** The last level of the episode is behind you. */
+  | { kind: 'finished' }
   /**
-   * The end of the episode, or a level that is not in the registry at all.
-   * Replaying is what the game did before there was anywhere else to go, and
-   * an end-of-episode screen is not this change's job.
+   * A level that is not in the registry at all. Replaying is the safe answer
+   * on a screen the player has just won something on, and it is what the game
+   * did before there was anywhere else to go.
    */
   | { kind: 'replay' }
 
+/**
+ * What the tally screen should offer, and therefore what it should say.
+ *
+ * A discriminated union rather than a nullable level name, because there are
+ * three outcomes and two of them have no name to show. It lives here rather
+ * than with the screen that draws it because which of the three you get is a
+ * question about the campaign; the screen's only job is to letter it.
+ */
+export type Outro = { kind: 'next'; name: string } | { kind: 'finished' } | { kind: 'replay' }
+
+export function outroFor(onwards: Onward | null): Outro {
+  if (onwards?.kind === 'advance') return { kind: 'next', name: onwards.next.name }
+  if (onwards?.kind === 'finished') return { kind: 'finished' }
+  return { kind: 'replay' }
+}
+
 export function onward(finishedId: string): Onward {
   const next = nextLevel(finishedId)
-  return next ? { kind: 'advance', next } : { kind: 'replay' }
+  if (next) return { kind: 'advance', next }
+  // Finishing the LAST level is an ending; finishing a level nobody has heard
+  // of is a bug, and the two must not answer the same way. Told apart by
+  // whether the registry knows the level at all.
+  return levelIndex(finishedId) >= 0 ? { kind: 'finished' } : { kind: 'replay' }
 }
 
 /**

@@ -57,7 +57,7 @@ export class Minimap {
   readonly mesh: THREE.Mesh
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
-  private readonly texture: THREE.CanvasTexture
+  private texture: THREE.CanvasTexture
   private scale: number
   private signature = ''
 
@@ -72,11 +72,7 @@ export class Minimap {
     if (!ctx) throw new Error('2d context unavailable')
     this.ctx = ctx
 
-    this.texture = new THREE.CanvasTexture(this.canvas)
-    this.texture.magFilter = THREE.NearestFilter
-    this.texture.minFilter = THREE.NearestFilter
-    this.texture.generateMipmaps = false
-    this.texture.colorSpace = THREE.SRGBColorSpace
+    this.texture = this.makeTexture()
 
     this.mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
@@ -104,11 +100,36 @@ export class Minimap {
     this.scale = scale
     this.canvas.width = width
     this.canvas.height = height
+
+    // A NEW texture, not the same one pointed at a resized canvas.
+    //
+    // three.js allocates a texture's GPU storage once, with `texStorage2D`,
+    // and that allocation is immutable -- every later upload is a
+    // `texSubImage2D` into it. So a texture first uploaded at E1M1's 60x51
+    // could never show E1M5's 64x40: the upload is wider than the allocation,
+    // the call fails, and the map freezes on whatever was in it. E1M2, E1M3
+    // and E1M4 all happen to fit INSIDE 60x51, which is why the nest was the
+    // only level anyone saw it on, and why "the automap fits on the screen"
+    // passed for all five.
+    const material = this.mesh.material as THREE.MeshBasicMaterial
+    this.texture.dispose()
+    this.texture = this.makeTexture()
+    material.map = this.texture
+    material.needsUpdate = true
+
     this.place(width, height)
     // The signature encodes positions in map pixels, which have just changed
     // meaning. Clearing it forces the first paint on the new level.
     this.signature = ''
-    this.texture.needsUpdate = true
+  }
+
+  private makeTexture(): THREE.CanvasTexture {
+    const texture = new THREE.CanvasTexture(this.canvas)
+    texture.magFilter = THREE.NearestFilter
+    texture.minFilter = THREE.NearestFilter
+    texture.generateMipmaps = false
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
   }
 
   /** Top right, in the ortho 0..1 screen space the layer uses. */
