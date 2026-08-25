@@ -117,6 +117,20 @@ keys the player can actually collect; one pass assumes you hold every card, so a
 key sealed inside the vault it opens ships as an unfinishable level. Secrets are
 impassable to it on purpose -- a secret must never be load-bearing.
 
+**A level must not fight its roster one at a time.** What makes the bestiary
+work is that no two creatures are answered by the same habit, and that only
+comes up when two of them ask at once. `level.test.ts` holds that at least two
+thirds of a level's creatures have a companion within 8 cells AND line of sight
+to them -- through walls does not count, because two creatures either side of
+one are two encounters. E1M1 originally failed this: seven creatures, of which
+the Spitter, the Slimebloat, the Shellback and the Brute -- every interesting
+one -- were each fought alone.
+
+**Chargers need a room, not a corridor.** The Brute's lunge travels a fixed
+line, so it is dodged by stepping sideways; putting one in a one-cell channel
+designs the dodge out of it. There are exactly two places on E1M1 with the
+lateral room for it.
+
 **Levels are a registry, and the world is rebuilt per level.**
 `world/levels/index.ts` holds the episode in order and position in that array
 IS the progression. `world/scene.ts` owns everything whose lifetime is one

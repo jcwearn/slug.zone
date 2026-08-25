@@ -48,54 +48,84 @@ const level: LevelSource = {
     // away. The player was spawning nose-first into brickwork.
     { type: 'player', x: 1.5, z: 1.5, angle: -Math.PI / 2 },
 
-    // Clustered at the spawn on purpose while there is no HUD, automap or kill
-    // counter to find them with.
-    //
-    // Only two sightlines exist from this corner: east along row 1, and south
-    // down column 1. Everything else is around a bend, which is how the last
-    // arrangement ended up with two of four enemies invisible despite sitting
-    // on open, reachable ground. visibility.test.ts now holds that line.
-    //
-    // Three Grubs east so the swarm reads as a swarm, and the Spitter south so
-    // there is a second direction to worry about -- at four cells it is inside
-    // its 7.5 range and will open fire while the Grubs close.
+    // Three Grubs east so the swarm reads as a swarm, a fourth down the west
+    // column so there is a second direction to watch, and the Spitter behind
+    // it at four cells -- inside its 7.5 reach, so it opens fire while the
+    // swarm closes. Only two sightlines exist from this corner, east along
+    // row 1 and south down column 1, and both of them now have something in
+    // them. `visibility.test.ts` holds that line.
     { type: 'grub', x: 4.5, z: 1.5 },
     { type: 'grub', x: 6.5, z: 1.5 },
     { type: 'grub', x: 8.5, z: 1.5 },
+    { type: 'grub', x: 1.5, z: 3.5 },
     { type: 'spitter', x: 1.5, z: 5.5 },
 
-    // The rest of the roster, out past the opening encounter, each put where
-    // the thing it punishes is the thing the room invites.
-    //
-    // A Slimebloat shares the corridor with the Grinder, so the first one you
-    // meet is the first one you are tempted to walk up to and shotgun.
-    { type: 'slimebloat', x: 7.5, z: 11.5 },
-    // A Shellback in the 3x5 room past the unkeyed door -- the only space on
-    // the level with room enough to walk around one, which is the answer to it.
+    // The 3x5 room past the unkeyed door is one of exactly two places on this
+    // level with room to walk around anything, which is why the Shellback is
+    // in it. The Grub is there so that walking around it costs something --
+    // circling an armoured front while being chased from behind is the fight,
+    // and a Shellback alone in a room is just a slow puzzle.
     { type: 'shellback', x: 11.5, z: 4.5 },
-    // A Brute in the red vault. A charger in a 3x3 room with the only way out
-    // behind you is the fight it was built for.
-    { type: 'brute', x: 14.5, z: 12.5 },
-    // The Grinder is no longer handed out at spawn, so this is the only one in
-    // the level and it is a long way south of where you start -- the first
-    // encounter is deliberately meant to be fought with the Shaker.
+    // Deep in the room rather than by the door: at nine cells from the start
+    // it counted as part of the opening encounter, which must be visible from
+    // spawn, and it is behind a shut door. `visibility.test.ts` measures that
+    // distance straight through walls, so "near" and "part of the first fight"
+    // are the same thing to it.
+    { type: 'grub', x: 12.5, z: 2.5 },
+
+    // The long z=7 corridor, which had nothing in it at all. A Slimebloat is
+    // the right thing for a one-cell channel: there is no getting past it and
+    // no room to be inside the burst, so it has to be shot from down the hall
+    // -- which is the Salt Shaker's job and the reason the Shaker still has
+    // one after the Grinder turns up.
+    { type: 'slimebloat', x: 11.5, z: 7.5 },
+
+    // Row 9 runs the full width of the map and is the longest sightline in the
+    // level. It was empty. A Spitter at the far end works the whole corridor
+    // while two Grubs close from the middle: backing off the Grubs walks you
+    // down the Spitter's lane, and charging the Spitter walks you through the
+    // Grubs.
+    { type: 'spitter', x: 14.5, z: 9.5 },
+    { type: 'grub', x: 9.5, z: 9.5 },
+    { type: 'grub', x: 11.5, z: 9.5 },
+
+    // Two Slimebloats a cell apart in the southern corridor, sharing it with
+    // the Grinder. Killing either one inside 2.6 cells of the other sets the
+    // second off, which is the chain the burst exists for -- and this is the
+    // spot where the shotgun you have just picked up is most tempting and
+    // most wrong.
+    { type: 'slimebloat', x: 7.5, z: 11.5 },
+    { type: 'slimebloat', x: 8.5, z: 11.5 },
+
+    // The red vault. The Brute sits in the 3x2 opening at the top rather than
+    // in one of the one-cell columns below it: the lunge travels a fixed line
+    // now, so it is dodged by stepping sideways, and a charger in a corridor
+    // is a creature with the dodge designed out of it.
+    { type: 'brute', x: 15.5, z: 11.5 },
+    { type: 'grub', x: 14.5, z: 14.5 },
+
     { type: 'pickup', item: 'grinder', x: 5.5, z: 11.5 },
     { type: 'pickup', item: 'health', x: 14.5, z: 4.5 },
     { type: 'pickup', item: 'redkey', x: 3.5, z: 13.5 },
 
     { type: 'pickup', item: 'armourshard', x: 3.5, z: 5.5 },
     { type: 'pickup', item: 'coarse', x: 7.5, z: 7.5 },
+    // Row 9 is a longer fight than it was, so it is supplied for one.
+    { type: 'pickup', item: 'coarse', x: 6.5, z: 9.5 },
+    { type: 'pickup', item: 'health', x: 2.5, z: 9.5 },
     { type: 'pickup', item: 'coarsebox', x: 16.5, z: 9.5 },
     { type: 'pickup', item: 'armour', x: 11.5, z: 15.5 },
     { type: 'pickup', item: 'medkit', x: 18.5, z: 12.5 },
 
-    // The vault behind the red door at 13,13. Fourteen cells, and the exit is
-    // reachable without ever opening it -- so this has to be worth the detour
-    // on its own rather than because the level forces you through it.
-    { type: 'pickup', item: 'coarsebox', x: 15.5, z: 11.5 },
-    { type: 'pickup', item: 'medkit', x: 15.5, z: 12.5 },
+    // The vault is reachable without ever opening it, so what is inside has to
+    // be worth the detour on its own rather than because the level forces you
+    // through it.
+    { type: 'pickup', item: 'coarsebox', x: 14.5, z: 11.5 },
+    { type: 'pickup', item: 'medkit', x: 16.5, z: 11.5 },
   ],
-  par: 90_000,
+  // Fifteen creatures rather than seven, so the ninety seconds that was par
+  // for a shooting gallery is not par for a fight.
+  par: 120_000,
 }
 
 export default level

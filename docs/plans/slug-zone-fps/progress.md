@@ -73,19 +73,18 @@ build` is what CI runs, in that order.
 
 ## Next up, in the order I would do it
 
-1. **Play E1M2 and the transition.** Still nobody's hands on it. The registry
-   PR rewrote roughly ninety references in `main.ts` and that file has no unit
-   tests -- `world/scene.ts` and `campaign.ts` were extracted precisely so the
-   testable parts could leave it, but `advance()` itself is verified by reading.
-2. **Rework E1M1's encounters.** It is seven creatures on a 20x17 grid fought
-   almost entirely one at a time, which is why the roster's premise never comes
-   up. E1M2 was written to the opposite brief and is the reference.
-3. **E1M3-E1M5.** The registry makes this pure authoring, and `level.test.ts`
-   covers every new level automatically the moment it is added to `LEVELS`.
-4. **Listen to the music.** It shipped without ever being heard by the person
+1. **Play E1M2, E1M1 and the transition.** Still nobody's hands on any of it.
+   The registry PR rewrote roughly ninety references in `main.ts` and that file
+   has no unit tests -- `world/scene.ts` and `campaign.ts` were extracted
+   precisely so the testable parts could leave it, but `advance()` itself is
+   verified by reading.
+2. **E1M3-E1M5.** The registry makes this pure authoring, and `level.test.ts`
+   covers every new level automatically the moment it is added to `LEVELS` --
+   including the new rule that a level may not fight its roster one at a time.
+3. **Listen to the music.** It shipped without ever being heard by the person
    who wrote it. Still unheard: no audio out for an agent, so this needs
    Jackson. The mix levels are guesses.
-5. **The DNS cutover.** Still the only thing between the game and a real address
+4. **The DNS cutover.** Still the only thing between the game and a real address
    with HTTPS, and still blocked on the friend who controls DNS.
 
 ## Handoff notes
