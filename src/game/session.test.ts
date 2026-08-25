@@ -49,11 +49,14 @@ describe('formatTime', () => {
 
 describe('createSession', () => {
   it('converts par from milliseconds to seconds', () => {
-    // level.par is 90_000. Comparing that against an elapsed in seconds would
-    // put the par at twenty-five hours.
-    const session = createSession(level, 4, 8)
+    // `elapsed` counts seconds. Comparing it against a par still in
+    // milliseconds puts E1M1's ninety seconds at twenty-five hours.
+    //
+    // Asserted against a par set here rather than against whatever E1M1
+    // currently happens to use: this is a test about the unit, and it should
+    // not fail because a level was retuned.
+    const session = createSession({ ...level, par: 90_000 }, 4, 8)
     expect(session.par).toBe(90)
-    expect(level.par).toBe(90_000)
   })
 
   it('takes the secret total from the level itself', () => {

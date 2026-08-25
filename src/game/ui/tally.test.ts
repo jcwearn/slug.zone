@@ -7,8 +7,17 @@ import e1m1 from '../world/levels/e1m1.ts'
 const level = parseLevel(e1m1)
 const STEP = 1 / 60
 
+/**
+ * A finished run, with a par fixed here rather than taken from E1M1.
+ *
+ * These are tests about counting and formatting; pinning them to whatever par
+ * the first level currently ships with makes retuning a level fail the tally
+ * suite for no reason.
+ */
+const PAR_MS = 90_000
+
 function run(kills = 4, killsTotal = 4, items = 4, itemsTotal = 8): Session {
-  const session = createSession(level, killsTotal, itemsTotal)
+  const session = createSession({ ...level, par: PAR_MS }, killsTotal, itemsTotal)
   session.kills = kills
   session.items = items
   session.secrets = 1

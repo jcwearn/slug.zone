@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs'
+import { hasLineOfSight } from '../engine/collision.ts'
 import { describe, expect, it } from 'vitest'
 import {
   cellAt,
@@ -293,6 +294,9 @@ describe('unmarkableExits', () => {
   })
 })
 
+/** How close two creatures must be to be part of the same fight, in cells. */
+const COMPANION_RANGE = 8
+
 describe('shipped levels', () => {
   // Every level file must parse. Cheap, and it catches typos in a hand-edited
   // ASCII grid the moment they are introduced rather than at play time.
@@ -421,6 +425,35 @@ describe('shipped levels', () => {
       'secrets with no reachable cell beside them',
     ).toEqual([])
   })
+
+  it.each(levels.map((l) => [l.id, l] as const))(
+    '%s does not fight its roster one at a time',
+    (_id, src) => {
+      // What makes the bestiary work is that no two creatures are answered by
+      // the same habit -- which only ever comes up when two of them are asking
+      // at once. Met one at a time they are a sequence of separate puzzles,
+      // and the level is a shooting gallery however many things are in it.
+      //
+      // Measured with line of sight, not distance: two creatures either side
+      // of a wall are two encounters. E1M1 shipped with seven creatures of
+      // which FOUR -- the Spitter, the Slimebloat, the Shellback and the Brute,
+      // every one that is interesting -- had no companion at all.
+      const level = parseLevel(src)
+      const foes = level.entities.filter((e) => e.type !== 'pickup')
+      const withCompany = foes.filter((a) =>
+        foes.some(
+          (b) =>
+            a !== b &&
+            Math.hypot(a.x - b.x, a.z - b.z) <= COMPANION_RANGE &&
+            hasLineOfSight(level, a.x, a.z, b.x, b.z),
+        ),
+      )
+      expect(
+        withCompany.length / foes.length,
+        'most of this roster is fought alone',
+      ).toBeGreaterThanOrEqual(2 / 3)
+    },
+  )
 
   it.each(levels.map((l) => [l.id, l] as const))(
     '%s draws an automap that fits on the screen',
