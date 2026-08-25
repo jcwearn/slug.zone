@@ -82,16 +82,28 @@ build` is what CI runs, in that order.
    has no unit tests -- `world/scene.ts` and `campaign.ts` were extracted
    precisely so the testable parts could leave it, but `advance()` itself is
    verified by reading.
-2. **E1M4-E1M5.** Pure authoring now. `level.test.ts` covers every new level
-   the moment it joins `LEVELS`, and `playthrough.test.ts` walks it. The bot is
-   the tuning instrument: set `PLAY_OUT` to a path and it reports time, kills
-   and damage per level. The curve so far is 11, 22, 145 damage across E1M1 to
-   E1M3, so there is room to escalate but not much room to escalate steeply.
+2. **G7, the boss.** E1M5's nest was built to the shape a boss fight wants --
+   eleven cells by eighteen, pillared, with two ways in -- and is deliberately
+   not full of creatures.
 
-   E1M3 was moved three times on the bot's evidence: a Shellback corking the
-   only mouth into the hall with a vat beside it, and then an undivided hall
-   where `provoked` never resets so all eleven creatures in it arrived at once.
-   Both read fine on the grid and both were fatal in play.
+### What the bot cost, per level
+
+Set `PLAY_OUT` to a path and `playthrough.test.ts` reports this:
+
+| level | time  | kills | damage |
+| ----- | ----- | ----- | ------ |
+| E1M1  | 8.9s  | 5/15  | 11     |
+| E1M2  | 14.8s | 7/16  | 22     |
+| E1M3  | 33.1s | 16/19 | 131    |
+| E1M4  | 36.0s | 9/18  | 142    |
+| E1M5  | 21.4s | 11/21 | 47     |
+
+**Read that column as the cost of the bot's ROUTE, not as difficulty.** It
+sprints between fights and shoots only what gets in the way, so a level with a
+fast line through it scores low however much is in it. E1M5 has the most
+creatures in the episode and the lowest figure of the last three. It is useful
+for catching a level that costs nothing, and for comparing a level against
+itself either side of a change. It is not a ranking.
 
 3. **Listen to the music.** It shipped without ever being heard by the person
    who wrote it. Still unheard: no audio out for an agent, so this needs

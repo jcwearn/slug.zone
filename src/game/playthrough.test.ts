@@ -296,7 +296,16 @@ function play(source: (typeof LEVELS)[number]): Report {
       if (Math.hypot(tx - player.x, tz - player.z) < 0.35) leg++
       else {
         player.yaw = facing(player.x, player.z, tx, tz)
-        if (!wedged) held.add('forward')
+        if (!wedged) {
+          held.add('forward')
+          // Sprint between fights, walk inside them -- which is what a person
+          // does, and both halves matter. A bot that never ran could not shed
+          // anything it had provoked, because a walk is 2.6 and a Grub is 2.4:
+          // it towed a train around E1M4's ring and arrived at the last fight
+          // with eight creatures on it. A bot that always ran charged into the
+          // middle of rooms and was surrounded before it had killed anything.
+          if (!threat) held.add('run')
+        }
       }
     }
 

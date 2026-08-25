@@ -2,6 +2,8 @@ import type { LevelSource } from '../types.ts'
 import e1m1 from './e1m1.ts'
 import e1m2 from './e1m2.ts'
 import e1m3 from './e1m3.ts'
+import e1m4 from './e1m4.ts'
+import e1m5 from './e1m5.ts'
 
 /**
  * The episode, in order.
@@ -15,7 +17,7 @@ import e1m3 from './e1m3.ts'
  * is present but not listed should be a test failure rather than something
  * that quietly joins the episode. `level.test.ts` holds that both ways.
  */
-export const LEVELS: readonly LevelSource[] = [e1m1, e1m2, e1m3]
+export const LEVELS: readonly LevelSource[] = [e1m1, e1m2, e1m3, e1m4, e1m5]
 
 export function levelIndex(id: string): number {
   return LEVELS.findIndex((level) => level.id === id)
