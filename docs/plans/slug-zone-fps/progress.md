@@ -74,6 +74,10 @@ build` is what CI runs, in that order.
 ## Next up, in the order I would do it
 
 1. **Play E1M2, E1M1 and the transition.** Still nobody's hands on any of it.
+   Less urgent than it was -- `playthrough.test.ts` now walks every level end to
+   end through the real systems and found a bug that had been shipping since G3
+   -- but a bot with perfect aim and no nerves is not a player, and the
+   transition itself is still only verified by reading.
    The registry PR rewrote roughly ninety references in `main.ts` and that file
    has no unit tests -- `world/scene.ts` and `campaign.ts` were extracted
    precisely so the testable parts could leave it, but `advance()` itself is

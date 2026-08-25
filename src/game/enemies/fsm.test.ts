@@ -202,6 +202,22 @@ describe('damage and death', () => {
     expect(mind.gibbed).toBe(false)
   })
 
+  it('forgets justDied as soon as the machine steps again', () => {
+    // Not a nicety: it is the constraint that decides where the caller has to
+    // read the flag. `damage` sets it and `step` clears it at the top of the
+    // NEXT tick, so anything that wants to see a death must look before it
+    // steps that creature -- and the player's shots land earlier in the same
+    // tick than the creature update does.
+    //
+    // main.ts read it on the wrong side for the whole of G3 through G6: every
+    // creature the player shot died unobserved, the kill counter never moved
+    // off zero, and no death burst ever went off.
+    damage(mind, grub, 9999, never)
+    expect(mind.justDied).toBe(true)
+    step(mind, grub, seeing(5), STEP)
+    expect(mind.justDied).toBe(false)
+  })
+
   it('settles from dying to dead', () => {
     damage(mind, grub, 999, never)
     advance(mind, seeing(6), grub.dyingTime + STEP)

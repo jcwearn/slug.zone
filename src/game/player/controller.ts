@@ -4,7 +4,7 @@ import {
   slideAlongDiscs,
   type Disc,
 } from '../engine/collision.ts'
-import { moveVector, type Input } from '../engine/input.ts'
+import { moveVector, type PlayerInput } from '../engine/input.ts'
 import { clamp } from '../engine/math.ts'
 import type { Level } from '../world/level.ts'
 
@@ -46,7 +46,7 @@ export function createPlayer(level: Level): PlayerState {
 export function updatePlayer(
   player: PlayerState,
   level: Level,
-  input: Input,
+  input: PlayerInput,
   dt: number,
   /** Creatures the player cannot walk through. */
   blockers: Disc[] = [],
