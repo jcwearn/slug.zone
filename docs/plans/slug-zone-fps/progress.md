@@ -82,9 +82,17 @@ build` is what CI runs, in that order.
    has no unit tests -- `world/scene.ts` and `campaign.ts` were extracted
    precisely so the testable parts could leave it, but `advance()` itself is
    verified by reading.
-2. **E1M3-E1M5.** The registry makes this pure authoring, and `level.test.ts`
-   covers every new level automatically the moment it is added to `LEVELS` --
-   including the new rule that a level may not fight its roster one at a time.
+2. **E1M4-E1M5.** Pure authoring now. `level.test.ts` covers every new level
+   the moment it joins `LEVELS`, and `playthrough.test.ts` walks it. The bot is
+   the tuning instrument: set `PLAY_OUT` to a path and it reports time, kills
+   and damage per level. The curve so far is 11, 22, 145 damage across E1M1 to
+   E1M3, so there is room to escalate but not much room to escalate steeply.
+
+   E1M3 was moved three times on the bot's evidence: a Shellback corking the
+   only mouth into the hall with a vat beside it, and then an undivided hall
+   where `provoked` never resets so all eleven creatures in it arrived at once.
+   Both read fine on the grid and both were fatal in play.
+
 3. **Listen to the music.** It shipped without ever being heard by the person
    who wrote it. Still unheard: no audio out for an agent, so this needs
    Jackson. The mix levels are guesses.

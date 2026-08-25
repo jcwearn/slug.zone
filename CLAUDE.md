@@ -127,6 +127,12 @@ Slimebloat ever burst. `didStrike` is the opposite -- `step` SETS that one, so
 it has to be read on the far side. Nothing had been played since G5, which is
 why neither was noticed.
 
+**`provoked` never resets, so an undivided room is one encounter.** Once a
+creature has seen the player it keeps coming forever, with or without line of
+sight. A hall with eleven creatures in it is therefore not eleven fights, it is
+one fight with eleven creatures, and it will kill anything that walks into the
+doorway. E1M3's bulkhead across row 9 exists for that reason and no other.
+
 **There is a bot.** `playthrough.test.ts` walks each shipped level from spawn to
 exit through the real collision, doors, keys and creatures, with no renderer. It
 answers questions a flood fill cannot: whether a body with a radius fits, whether
