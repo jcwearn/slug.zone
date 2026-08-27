@@ -7,7 +7,7 @@ import { PLAYER_RADIUS, raycast, type Disc } from './engine/collision.ts'
 import { parseLevel } from './world/level.ts'
 import { loadWorld, respawnEnemies, unloadWorld } from './world/scene.ts'
 import { LEVELS } from './world/levels/index.ts'
-import { carryInto, onward, type Onward } from './campaign.ts'
+import { carryInto, onward, outroFor, type Onward } from './campaign.ts'
 import type { LevelSource } from './world/types.ts'
 import { createPlayer, EYE_HEIGHT, updatePlayer } from './player/controller.ts'
 import { createHealth, damagePlayer, tickHealth } from './player/health.ts'
@@ -275,6 +275,20 @@ function restart(): void {
 }
 
 /**
+ * Back to the top of the episode, carrying nothing.
+ *
+ * A second run has to start where the first one did, or the best times it sets
+ * are not comparable with the ones already stored -- and arriving on E1M1
+ * holding everything E1M5 gave you is not a second run, it is a victory lap.
+ */
+function restartEpisode(): void {
+  Object.assign(health, createHealth())
+  Object.assign(arsenal, createArsenal())
+  keys.clear()
+  loadLevel(LEVELS[0])
+}
+
+/**
  * Move on to the next level.
  *
  * Parsed BEFORE anything is torn down, so a malformed level throws with the
@@ -288,12 +302,23 @@ function restart(): void {
  * rather than throwing.
  */
 function advance(next: LevelSource): void {
+  carryInto(health, arsenal, keys)
+  loadLevel(next)
+}
+
+/**
+ * Swap the world for another level's, leaving the player's kit alone.
+ *
+ * Split from `advance` because the two callers disagree about exactly one
+ * thing -- what the player brings -- and that is the thing worth keeping in
+ * one obvious place rather than buried in a flag.
+ */
+function loadLevel(next: LevelSource): void {
   const level = parseLevel(next)
   unloadWorld(world, view.scene)
   world = loadWorld(level, view.scene)
   applyLevelStyling()
 
-  carryInto(health, arsenal, keys)
   screen.setLevel(world.level)
   // No-ops when two levels share a track, so the tune plays through the seam
   // rather than restarting at the top of every map.
@@ -530,12 +555,13 @@ new Loop({
           // `after` was decided at the exit, not here, so the caption the
           // player just read and the thing this does cannot disagree.
           if (after?.kind === 'advance') advance(after.next)
+          else if (after?.kind === 'finished') restartEpisode()
           else restart()
           return
         }
       }
 
-      screen.showTally(world.level.name, tally, after?.kind === 'advance' ? after.next.name : null)
+      screen.showTally(world.level.name, tally, outroFor(after))
       screen.update(health, arsenal, keys, 'neutral', { text: '', colour: '' })
       // Doors keep moving so a leaf caught mid-rise is not frozen behind the
       // tally, and the enemies are deliberately left where they stood.

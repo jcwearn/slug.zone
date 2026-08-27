@@ -47,7 +47,12 @@ Fixed with `def.commitAt`, plus three other bugs found in the same read (a
 homing lunge that could not be sidestepped, an unreachable `gibThreshold` with
 `playGib` as dead code, and death bursts that never chained).
 
-**Jackson has played the fix and says combat is still too easy.** That is
+**Jackson has now played all five levels** (without the Matriarch -- that PR
+was still open) and reported two things: the automap was dead on E1M5, and
+finishing the last level looped instead of ending. Both fixed. The first was a
+three.js texture-allocation bug that only E1M5 was large enough to trigger.
+
+**Jackson has played the combat fix and says combat is still too easy.** That is
 deliberately not being chased with another tuning pass -- the remaining headroom
 is encounter design, and the agreed plan is to address it as the levels get
 fleshed out. The Salt Shaker is still 48 dps with infinite ammo, near-zero

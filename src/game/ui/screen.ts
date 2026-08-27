@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Hud } from './hud.ts'
 import { MessageLine, PROMPT_Y } from './message.ts'
-import { Intermission } from './intermission.ts'
+import { Intermission, type Outro } from './intermission.ts'
 import { Minimap } from './minimap.ts'
 import type { Tally } from './tally.ts'
 import type { Explored } from '../world/explored.ts'
@@ -104,12 +104,12 @@ export class ScreenLayer {
    * nulled it and then fell through to this method, which turned the overlay
    * back on before throwing on the null it had just been handed.
    */
-  showTally(levelName: string, tally: Tally | null, nextName: string | null): void {
+  showTally(levelName: string, tally: Tally | null, outro: Outro): void {
     if (!tally) {
       this.intermission.hide()
       return
     }
-    this.intermission.show(levelName, tally, nextName)
+    this.intermission.show(levelName, tally, outro)
   }
 
   /**

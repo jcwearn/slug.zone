@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { carryInto, onward } from './campaign.ts'
+import { carryInto, onward, outroFor } from './campaign.ts'
 import { LEVELS } from './world/levels/index.ts'
 import { createHealth } from './player/health.ts'
 import { createArsenal } from './weapons/arsenal.ts'
@@ -11,12 +11,34 @@ describe('onward', () => {
     if (result.kind === 'advance') expect(result.next).toBe(LEVELS[1])
   })
 
-  it('replays at the end of the episode', () => {
-    expect(onward(LEVELS[LEVELS.length - 1].id).kind).toBe('replay')
+  it('ends the episode after the last level', () => {
+    expect(onward(LEVELS[LEVELS.length - 1].id).kind).toBe('finished')
   })
 
   it('replays rather than throwing on an unknown level', () => {
+    // Not 'finished'. Finishing the last level is an ending; finishing a level
+    // the registry has never heard of is a bug, and showing the player an
+    // ending for it would hide that.
     expect(onward('nonsense').kind).toBe('replay')
+  })
+})
+
+describe('outroFor', () => {
+  it('offers the next level by name', () => {
+    expect(outroFor(onward(LEVELS[0].id))).toEqual({ kind: 'next', name: LEVELS[1].name })
+  })
+
+  it('offers an ending after the last level', () => {
+    expect(outroFor(onward(LEVELS[LEVELS.length - 1].id))).toEqual({ kind: 'finished' })
+  })
+
+  it('offers a replay for a level the registry does not know', () => {
+    expect(outroFor(onward('nonsense'))).toEqual({ kind: 'replay' })
+  })
+
+  it('offers a replay when there is nothing to go on at all', () => {
+    // The screen asks before the level has finished, every frame it is up.
+    expect(outroFor(null)).toEqual({ kind: 'replay' })
   })
 })
 
