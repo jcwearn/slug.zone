@@ -61,7 +61,7 @@ export interface EnemyDef {
    * Which body the renderer builds. Colour and scale alone make a recoloured
    * Grub, not a new creature.
    */
-  shape: 'slug' | 'bloat' | 'brute' | 'shell'
+  shape: 'slug' | 'bloat' | 'brute' | 'shell' | 'matriarch'
   /**
    * Armour that only covers one side, or null for a soft-all-over slug.
    *
@@ -98,6 +98,20 @@ export interface EnemyDef {
    * do for it.
    */
   deathBurst: { damage: number; radius: number } | null
+  /**
+   * Fields that replace theirs once it is hurt badly enough, or null.
+   *
+   * The whole of what separates a boss from a large Brute. A creature with one
+   * behaviour is a creature you solve once and then execute; a second set of
+   * numbers on the far side of a health threshold means the answer that got
+   * you there stops working, and you have to find another one while losing.
+   *
+   * Deliberately a partial def rather than a state machine: a phase is not a
+   * different creature, it is the same creature fighting differently, and
+   * everything that reads a stat already goes through one function.
+   */
+  enrage: { below: number; def: Partial<EnemyDef> } | null
+
   /**
    * Ranged attack, or null for a melee enemy.
    *

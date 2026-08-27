@@ -111,9 +111,10 @@ const level: LevelSource = {
     { type: 'grub', x: 29.5, z: 16.5 },
     { type: 'spitter', x: 26.5, z: 17.5 },
 
-    // The middle, guarding the way out.
-    { type: 'brute', x: 26.5, z: 9.5 },
-    { type: 'shellback', x: 22.5, z: 9.5 },
+    // The middle band, between the two ways in and the way out. The room was
+    // built to this shape before there was anything to put in it.
+    { type: 'matriarch', x: 25.5, z: 9.5 },
+    { type: 'grub', x: 21.5, z: 10.5 },
 
     { type: 'pickup', item: 'grinder', x: 1.5, z: 1.5 },
     { type: 'pickup', item: 'health', x: 4.5, z: 5.5 },

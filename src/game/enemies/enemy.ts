@@ -7,7 +7,15 @@ import {
 import { angleDelta } from '../engine/math.ts'
 import type { Level } from '../world/level.ts'
 import { ENEMIES } from './definitions.ts'
-import { createMind, damage, isAlive, step, type EnemyMind, type Perception } from './fsm.ts'
+import {
+  activeDef,
+  createMind,
+  damage,
+  isAlive,
+  step,
+  type EnemyMind,
+  type Perception,
+} from './fsm.ts'
 import type { Cylinder } from './hitscan.ts'
 import type { EnemyDef } from './types.ts'
 
@@ -147,7 +155,11 @@ export function updateEnemy(
  * rewarded for staying out of its cone.
  */
 export function armourScale(enemy: Enemy, fromX: number, fromZ: number): number {
-  const armour = enemy.def.armour
+  // Through the active def, so plating can be part of a phase rather than a
+  // fixed property. A shell that survives to the end of a boss fight is a
+  // shell the player spends the whole fight walking around; one that cracks
+  // is a reward for having got that far.
+  const armour = activeDef(enemy.mind, enemy.def).armour
   if (!armour) return 1
   const bearing = Math.atan2(-(fromX - enemy.x), -(fromZ - enemy.z))
   return Math.abs(angleDelta(enemy.facing, bearing)) <= armour.arc ? armour.multiplier : 1

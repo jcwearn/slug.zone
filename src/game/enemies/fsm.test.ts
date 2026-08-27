@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { armourScale } from './enemy.ts'
 import {
+  activeDef,
   canSee,
   createMind,
   damage,
@@ -273,6 +275,9 @@ const FIGHTS_BACK: Record<string, number> = {
   slimebloat: 0.9,
   brute: 0.8,
   shellback: 0.7,
+  // Seven hundred health at forty-eight damage a second: she is never in any
+  // danger of dying before she has answered.
+  matriarch: 0.95,
 }
 
 describe('attack commitment', () => {
@@ -370,6 +375,85 @@ describe('attack commitment', () => {
   it('gives every enemy a fight-back floor', () => {
     // A new enemy type must state its floor rather than inherit silence.
     expect(Object.keys(FIGHTS_BACK).sort()).toEqual(Object.keys(ENEMIES).sort())
+  })
+})
+
+describe('a second phase', () => {
+  const boss = ENEMIES.matriarch
+  const rage = boss.enrage!
+
+  /** A mind at a given fraction of full health. */
+  const hurt = (fraction: number): EnemyMind => {
+    const m = createMind(boss)
+    m.hp = boss.hp * fraction
+    return m
+  }
+
+  it('fights by its first numbers while it is healthy', () => {
+    expect(activeDef(hurt(1), boss).standoff).toBe(boss.standoff)
+    expect(activeDef(hurt(1), boss).armour).toEqual(boss.armour)
+  })
+
+  it('swaps them once it is hurt past the threshold', () => {
+    const enraged = activeDef(hurt(rage.below - 0.05), boss)
+    expect(enraged.standoff).toBe(0)
+    expect(enraged.armour).toBeNull()
+    expect(enraged.charge).toBeGreaterThan(0)
+    expect(enraged.projectile).toBeNull()
+  })
+
+  it('keeps everything the second phase does not mention', () => {
+    // A partial, not a replacement. The creature is still the same creature.
+    const enraged = activeDef(hurt(0.1), boss)
+    expect(enraged.id).toBe(boss.id)
+    expect(enraged.shape).toBe(boss.shape)
+    expect(enraged.hp).toBe(boss.hp)
+  })
+
+  it('leaves a creature with one phase entirely alone', () => {
+    // Every other creature in the game takes this path, so it has to be the
+    // def itself and not a copy of it.
+    const grubMind = createMind(grub)
+    grubMind.hp = 1
+    expect(activeDef(grubMind, grub)).toBe(grub)
+  })
+
+  it('changes what the machine actually does, not just what it reports', () => {
+    // The point of the phase. While the plating holds she gives ground to keep
+    // the player at throwing range; after it splits she closes. Asserted on
+    // the intent, because a phase that reads differently and behaves the same
+    // is decoration.
+    const near = seeing(2)
+
+    const healthy = hurt(1)
+    for (let i = 0; i < 200; i++) step(healthy, boss, near, STEP)
+    const backing = step(healthy, boss, near, STEP)
+
+    const split = hurt(0.1)
+    for (let i = 0; i < 200; i++) step(split, boss, near, STEP)
+    const closing = step(split, boss, near, STEP)
+
+    expect(backing.velocity, 'should be giving ground at two cells').toBeLessThan(0)
+    expect(closing.velocity, 'should not still be giving ground').toBeGreaterThanOrEqual(0)
+  })
+
+  it('stops being armoured once the shell splits', () => {
+    // Read through the active def, so the plating is part of the phase rather
+    // than a fixed property of the body.
+    const front = { x: 5, z: 4 }
+    const healthy = {
+      def: boss,
+      mind: hurt(1),
+      x: 5,
+      z: 5,
+      facing: 0,
+      age: 0,
+      lungeX: null,
+      lungeZ: null,
+    }
+    const split = { ...healthy, mind: hurt(0.1) }
+    expect(armourScale(healthy, front.x, front.z)).toBeLessThan(1)
+    expect(armourScale(split, front.x, front.z)).toBe(1)
   })
 })
 
