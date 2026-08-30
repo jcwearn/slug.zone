@@ -109,17 +109,26 @@ exactly and needs no destination cell. A sideways slide is still a one-line
 change in `doorview.ts` if a later level wants one, but it would need a new
 level invariant that the far cell is solid.
 
-**G4 shipped three new enemy types, not five.** The plan called for seven in
-total. Two more would have been a longer roster rather than a deeper one, and
-there is one level to spread them across -- what makes the set work is that no
-two are answered by the same habit, and five already covers standing still,
-standing at range, killing at arm's length, being caught in the open, and
-fighting head-on in a corridor. The count is worth revisiting in G6, when there
-is somewhere to put more.
+**The roster is six, not the seven the plan called for.** G4 shipped three new
+types rather than five: two more would have been a longer roster rather than a
+deeper one, and there was one level to spread them across. What makes the set
+work is that no two are answered by the same habit, and five already covered
+standing still, standing at range, killing at arm's length, being caught in the
+open, and fighting head-on in a corridor.
 
-**The exit loops back to E1M1 rather than advancing.** E1M2-E1M5 do not exist
-yet, so the tally screen replays the level. `session.ts` holds nothing that
-assumes one level; a level registry is what G6 adds.
+Revisited in G6 as intended, and the answer was still no — with five levels to
+spread them over, the roster was thin in _placement_ rather than in kinds, and
+`level.test.ts` grew a rule about that instead (no level may fight its roster one
+at a time). The sixth type is the Matriarch in G7, which is a boss rather than a
+seventh slug.
+
+**~~The exit loops back to E1M1 rather than advancing.~~** Resolved in G6. The
+registry in `world/levels/index.ts` is the episode in order, `world/scene.ts`
+owns everything whose lifetime is one level, and `campaign.ts` holds what
+carries across a transition. Finishing the last level now ends the episode
+rather than looping, which took its own fix — `onward` had been answering
+"replay" both for the end of the episode and for a level the registry has never
+heard of, and those are not the same event.
 
 **The HUD portrait is a committed sprite sheet, not procedural art.** The plan
 said the face would be "procedurally-drawn". Three attempts at a hand-drawn
